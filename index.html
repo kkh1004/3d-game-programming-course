@@ -81,8 +81,14 @@
     .topnav-title{display:none}
   }
   @media (max-width:520px){
+    .topnav{padding:12px 16px}
     .topnav-brand{display:none}
-    .topnav-links{width:100%;justify-content:space-between}
+    .topnav-links{width:100%;justify-content:space-between;gap:8px}
+    .topnav-links a{font-size:11px;padding:4px 0;white-space:nowrap}
+  }
+  @media (max-width:300px){
+    .topnav-links{overflow-x:auto;justify-content:flex-start;gap:14px;scrollbar-width:none;-ms-overflow-style:none}
+    .topnav-links::-webkit-scrollbar{display:none}
   }
 
   /* ---------- HERO ---------- */
