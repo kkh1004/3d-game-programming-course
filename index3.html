@@ -1,0 +1,1444 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/png" href="img/favicon.png">
+<title>프로젝트팀 생성기 · 연성대학교 게임콘텐츠과</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#07070c;
+    --surface:rgba(255,255,255,.045);
+    --stroke:rgba(255,255,255,.1);
+    --text:#f2f3f7;
+    --muted:#9297ab;
+    --dim:#6a6f83;
+    --a1:#7c5cff;
+    --a2:#22d3ee;
+    --a3:#ff5c9d;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Pretendard','Pretendard Variable',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic','Segoe UI',Roboto,sans-serif;
+    line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  .bg-glow{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+  .bg-glow::before,.bg-glow::after{
+    content:'';position:absolute;border-radius:50%;filter:blur(120px);opacity:.3;
+  }
+  .bg-glow::before{width:600px;height:600px;background:var(--a1);top:-260px;left:-200px}
+  .bg-glow::after{width:520px;height:520px;background:var(--a2);top:80px;right:-220px;opacity:.18}
+  .wrap{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:0 24px}
+
+  header.app-header{padding:64px 0 28px}
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:9px;
+    font-size:13px;letter-spacing:.06em;color:var(--muted);
+    border:1px solid var(--stroke);background:var(--surface);
+    padding:7px 15px;border-radius:100px;margin-bottom:22px;
+  }
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--a2);box-shadow:0 0 10px var(--a2)}
+  h1{
+    font-size:clamp(2rem,4.4vw,2.8rem);
+    font-weight:800;letter-spacing:-.03em;margin-bottom:14px;
+  }
+  h1 .grad{
+    background:linear-gradient(105deg,var(--a2) 0%,var(--a1) 55%,var(--a3) 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;
+  }
+  .lede{color:var(--muted);max-width:680px;font-size:1rem}
+
+  .top-tabs{display:flex;gap:8px;margin:28px 0 0}
+  .top-tab-btn{
+    font-family:inherit;font-size:14px;font-weight:650;color:var(--muted);
+    border:1px solid var(--stroke);background:rgba(255,255,255,.03);
+    padding:12px 22px;border-radius:12px 12px 0 0;cursor:pointer;transition:.2s;
+    border-bottom:none;
+  }
+  .top-tab-btn:hover{color:var(--text)}
+  .top-tab-btn.active{
+    color:#fff;background:var(--surface);border-color:var(--stroke);
+    box-shadow:inset 0 2px 0 var(--a1);
+  }
+
+  main.app-main{padding-bottom:80px}
+  .panel{
+    border:1px solid var(--stroke);background:var(--surface);
+    border-radius:0 16px 16px 16px;padding:28px;
+  }
+  .tab-view{display:none}
+  .tab-view.active{display:block}
+
+  /* ---------- UPLOAD TAB ---------- */
+  .upload-zone{
+    border:2px dashed var(--stroke);border-radius:16px;padding:36px 24px;
+    text-align:center;transition:.2s;background:rgba(255,255,255,.02);
+  }
+  .upload-zone.drag-over{border-color:var(--a1);background:rgba(124,92,255,.08)}
+  .upload-zone p{color:var(--muted);margin-bottom:16px;font-size:14px}
+  .upload-btn{
+    font-family:inherit;font-size:14px;font-weight:700;color:#0b0b12;
+    background:linear-gradient(135deg,var(--a2),var(--a1));
+    border:none;border-radius:11px;padding:12px 22px;cursor:pointer;
+  }
+  .upload-summary{
+    margin-top:18px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+    font-size:13.5px;color:var(--muted);
+  }
+  .upload-summary b{color:var(--text)}
+  .count-badge{
+    border:1px solid var(--stroke);background:rgba(255,255,255,.04);
+    border-radius:100px;padding:5px 13px;font-weight:650;color:#d3d7e4;
+  }
+
+  .grade-filter{display:flex;gap:8px;margin:22px 0 14px}
+  .grade-chip{
+    font-family:inherit;font-size:13px;font-weight:650;color:var(--muted);
+    border:1px solid var(--stroke);background:rgba(255,255,255,.03);
+    padding:8px 16px;border-radius:100px;cursor:pointer;transition:.2s;
+  }
+  .grade-chip:hover{color:var(--text)}
+  .grade-chip.active{
+    color:#0b0b12;border-color:transparent;font-weight:700;
+    background:linear-gradient(135deg,var(--a2),var(--a1));
+  }
+
+  .roster-table-wrap{border:1px solid var(--stroke);border-radius:14px;overflow:hidden;background:#121218}
+  table.roster-table{width:100%;border-collapse:collapse;font-size:13.5px}
+  table.roster-table thead th{
+    text-align:left;background:#1c1c26;color:#d3d7e4;
+    font-weight:650;padding:11px 16px;border-bottom:1px solid var(--stroke);
+    position:sticky;top:0;
+  }
+  table.roster-table tbody td{padding:9px 16px;border-bottom:1px solid rgba(255,255,255,.05);color:var(--muted);background:#121218}
+  table.roster-table tbody tr:last-child td{border-bottom:none}
+  table.roster-table tbody tr:hover td{background:#191922}
+  .roster-scroll{max-height:520px;overflow-y:auto}
+  .empty-state{color:var(--dim);font-size:13.5px;padding:28px;text-align:center}
+
+  /* ---------- TEAM TAB ---------- */
+  .team-toolbar{
+    display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;
+    margin-bottom:20px;
+  }
+  .team-count-field{display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--muted)}
+  .team-count-field input{
+    width:64px;font-family:inherit;font-size:14px;color:var(--text);text-align:center;
+    background:rgba(255,255,255,.05);border:1px solid var(--stroke);
+    border-radius:9px;padding:8px 6px;
+  }
+  .team-count-field input:focus{outline:none;border-color:rgba(124,92,255,.6)}
+  .apply-btn{
+    font-family:inherit;font-size:13px;font-weight:700;color:#0b0b12;
+    background:linear-gradient(135deg,var(--a2),var(--a1));border:none;
+    border-radius:9px;padding:9px 16px;cursor:pointer;
+  }
+
+  .team-body{display:grid;grid-template-columns:260px 1fr;gap:20px;align-items:start}
+  .unassigned-panel{
+    border:1px solid var(--stroke);border-radius:14px;background:rgba(255,255,255,.03);
+    padding:16px;position:sticky;top:16px;
+  }
+  .unassigned-panel h3{font-size:13px;color:#d3d7e4;margin-bottom:12px;font-weight:650}
+  .unassigned-list{display:flex;flex-direction:column;gap:6px;max-height:640px;overflow-y:auto}
+
+  .student-chip{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    font-size:12.5px;font-weight:600;color:#e7e8ee;
+    background:rgba(255,255,255,.05);border:1px solid var(--stroke);
+    padding:7px 10px;border-radius:9px;cursor:grab;user-select:none;
+  }
+  .student-chip:active{cursor:grabbing}
+  .student-chip .sid{color:var(--dim);font-weight:500;font-size:11.5px}
+  .student-chip .chip-remove{
+    border:none;background:none;color:var(--dim);font-size:14px;line-height:1;cursor:pointer;
+    padding:0 2px;flex-shrink:0;
+  }
+  .student-chip .chip-remove:hover{color:#ff9ec4}
+
+  .team-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:16px}
+  .team-card{border:1px solid var(--stroke);border-radius:14px;background:rgba(255,255,255,.025);overflow:hidden}
+  .team-card-head{
+    padding:12px 16px;font-weight:700;font-size:14px;
+    background:linear-gradient(135deg,rgba(124,92,255,.18),rgba(34,211,238,.1));
+    border-bottom:1px solid var(--stroke);
+  }
+  .role-cols{display:grid;grid-template-columns:repeat(3,1fr)}
+  .role-col{padding:10px;border-left:1px solid var(--stroke)}
+  .role-col:first-child{border-left:none}
+  .role-label{
+    font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--a2);
+    margin-bottom:8px;text-align:center;
+  }
+  .drop-zone{
+    min-height:70px;border:1.5px dashed rgba(255,255,255,.12);border-radius:10px;
+    padding:6px;display:flex;flex-direction:column;gap:5px;transition:.15s;
+  }
+  .drop-zone.drag-over{border-color:var(--a1);background:rgba(124,92,255,.1)}
+  .drop-zone .student-chip{font-size:11.5px;padding:5px 8px}
+
+  .individual-card{
+    border:1px solid rgba(255,92,157,.35);border-radius:14px;
+    background:linear-gradient(135deg,rgba(255,92,157,.08),rgba(124,92,255,.04));
+    overflow:hidden;margin-bottom:16px;
+  }
+  .individual-card .team-card-head{
+    background:linear-gradient(135deg,rgba(255,92,157,.22),rgba(124,92,255,.1));
+    color:#ffd8e6;
+  }
+  .individual-card .drop-zone{margin:14px 16px;min-height:56px}
+
+  .toast{
+    position:fixed;left:50%;bottom:28px;transform:translate(-50%,20px);
+    background:#16161f;border:1px solid rgba(124,92,255,.4);color:var(--text);
+    font-size:13.5px;font-weight:600;padding:12px 20px;border-radius:100px;
+    box-shadow:0 12px 30px rgba(0,0,0,.4);
+    opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;
+    z-index:80;max-width:min(90vw,420px);text-align:center;
+  }
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+
+  .ghost-btn{
+    font-family:inherit;font-size:13px;font-weight:650;color:var(--text);
+    border:1px solid var(--stroke);background:rgba(255,255,255,.04);
+    padding:9px 16px;border-radius:10px;cursor:pointer;transition:.2s;
+  }
+  .ghost-btn:hover{border-color:rgba(255,92,157,.5);color:#ff9ec4}
+
+  /* ---------- EVAL TAB ---------- */
+  .eval-card{
+    border:1px solid var(--stroke);border-radius:16px;padding:28px;
+    background:rgba(255,255,255,.03);max-width:520px;
+  }
+  .eval-card h3{font-size:1.1rem;font-weight:700;margin-bottom:8px}
+  .eval-hint{color:var(--muted);font-size:13.5px;margin-bottom:20px}
+  .eval-input-row{display:flex;gap:10px;flex-wrap:wrap}
+  .input-field{
+    flex:1 1 140px;font-family:inherit;font-size:14px;color:var(--text);
+    background:rgba(255,255,255,.05);border:1px solid var(--stroke);
+    border-radius:10px;padding:11px 14px;transition:border-color .2s;
+  }
+  .input-field:focus{outline:none;border-color:rgba(124,92,255,.6)}
+
+  .eval-rating-card{border:1px solid var(--stroke);border-radius:16px;padding:24px;background:rgba(255,255,255,.03);max-width:640px}
+  .eval-rating-head{margin-bottom:14px}
+  .eval-rating-head h3{font-size:1.1rem;font-weight:700;margin-bottom:4px}
+  .eval-rating-head p{color:var(--muted);font-size:13px}
+  .teammate-row{
+    display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;
+    padding:14px 4px;border-bottom:1px solid rgba(255,255,255,.06);
+  }
+  .teammate-row:last-child{border-bottom:none}
+  .teammate-info{display:flex;flex-direction:column;gap:2px}
+  .teammate-name{font-weight:650;font-size:14px}
+  .teammate-meta{font-size:12px;color:var(--dim)}
+  .score-group{display:flex;gap:6px}
+  .score-btn{
+    width:34px;height:34px;border-radius:9px;font-family:inherit;font-weight:700;font-size:13px;
+    color:var(--muted);border:1px solid var(--stroke);background:rgba(255,255,255,.04);cursor:pointer;transition:.15s;
+  }
+  .score-btn:hover{color:var(--text);border-color:rgba(124,92,255,.4)}
+  .score-btn.active{
+    color:#0b0b12;border-color:transparent;background:linear-gradient(135deg,var(--a2),var(--a1));
+  }
+  .eval-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+
+  .name-link{
+    font-family:inherit;font-size:13.5px;font-weight:650;color:var(--a2);
+    background:none;border:none;cursor:pointer;padding:0;text-decoration:underline;
+  }
+  .name-link:hover{color:var(--a1)}
+
+  /* ---------- MODAL ---------- */
+  .modal-overlay{
+    position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.6);
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  }
+  .modal-box{
+    background:#16161f;border:1px solid var(--stroke);border-radius:18px;
+    max-width:480px;width:100%;max-height:85vh;overflow-y:auto;padding:26px;
+    box-shadow:0 24px 60px rgba(0,0,0,.5);
+  }
+  .modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:12px}
+  .modal-header h3{font-size:1.1rem;font-weight:750}
+  .modal-close{
+    width:30px;height:30px;flex-shrink:0;border-radius:9px;border:1px solid var(--stroke);
+    background:rgba(255,255,255,.05);color:var(--text);cursor:pointer;font-size:16px;
+  }
+  .modal-close:hover{background:rgba(255,255,255,.1)}
+  .modal-actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+  .pw-hint-text{font-size:12px;color:var(--dim);margin:8px 0 4px;letter-spacing:.08em}
+  .field-row{display:flex;flex-direction:column;gap:8px}
+  .change-pw-section{margin-top:18px;border-top:1px solid var(--stroke);padding-top:16px}
+
+  /* ---------- UPLOAD FORMAT GUIDE ---------- */
+  .format-guide{margin-top:32px}
+  .format-guide h3{font-size:14px;font-weight:700;margin-bottom:10px;color:#d3d7e4}
+  .format-guide-note{color:var(--muted);font-size:12.5px;margin-bottom:12px}
+  .format-guide img{
+    max-width:100%;border:1px solid var(--stroke);border-radius:12px;
+    background:#fff;padding:8px;display:block;
+  }
+  .upload-actions-row{display:flex;justify-content:flex-end;margin-top:14px}
+
+  footer{
+    padding:40px 0 60px;border-top:1px solid var(--stroke);
+    color:var(--dim);font-size:.85rem;
+    display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;
+    position:relative;z-index:1;
+  }
+
+  @media (max-width:760px){
+    .team-body{grid-template-columns:1fr}
+    .unassigned-panel{position:static}
+    .role-cols{grid-template-columns:1fr}
+    .role-col{border-left:none;border-top:1px solid var(--stroke)}
+    .role-col:first-child{border-top:none}
+  }
+  @media (max-width:560px){
+    header.app-header{padding:48px 0 20px}
+    .panel{padding:18px}
+  }
+</style>
+</head>
+<body>
+<div class="bg-glow"></div>
+
+<header class="wrap app-header">
+  <div class="eyebrow"><span class="dot"></span>연성대학교 · 게임콘텐츠과</div>
+  <h1>프로젝트팀 <span class="grad">생성기</span></h1>
+  <p class="lede">재학생 명단 엑셀을 업로드하고, 학년별로 팀을 만들어 기획·아트·개발 역할에 학생을 드래그해서 배치하세요.</p>
+
+  <div class="top-tabs">
+    <button type="button" class="top-tab-btn active" data-tab="upload">명단 업로드</button>
+    <button type="button" class="top-tab-btn" data-tab="team">팀 배정</button>
+    <button type="button" class="top-tab-btn" data-tab="eval">기여도 평가</button>
+    <button type="button" class="top-tab-btn" data-tab="results">평가 결과</button>
+  </div>
+</header>
+
+<main class="wrap app-main">
+  <section class="panel">
+
+    <div class="tab-view active" id="tab-upload">
+      <div class="upload-zone" id="uploadZone">
+        <p>학년-반 시트로 구성된 재학생 명단 엑셀(.xlsx)을 끌어다 놓거나 선택하세요.<br>(No / 학적반 / 수업반 / 학번 / 이름 형식의 시트를 인식합니다)</p>
+        <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none">
+        <button type="button" class="upload-btn" id="fileSelectBtn">엑셀 파일 선택</button>
+      </div>
+      <div class="upload-summary" id="uploadSummary" style="display:none"></div>
+
+      <div class="grade-filter" id="rosterGradeFilter" style="display:none">
+        <button type="button" class="grade-chip active" data-grade="all">전체</button>
+        <button type="button" class="grade-chip" data-grade="1">1학년</button>
+        <button type="button" class="grade-chip" data-grade="2">2학년</button>
+        <button type="button" class="grade-chip" data-grade="3">3학년</button>
+      </div>
+
+      <div class="roster-table-wrap" id="rosterTableWrap" style="display:none">
+        <div class="roster-scroll">
+          <table class="roster-table">
+            <thead><tr><th>학년</th><th>반</th><th>학번</th><th>이름</th></tr></thead>
+            <tbody id="rosterTbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="empty-state" id="rosterEmptyState">아직 업로드된 명단이 없습니다.</div>
+
+      <div class="upload-actions-row">
+        <button type="button" class="ghost-btn" id="fullResetBtn">전체 리셋</button>
+      </div>
+
+      <div class="format-guide">
+        <h3>엑셀은 이런 형식으로 작성해 주세요</h3>
+        <p class="format-guide-note">학년-학적반 이름의 시트(1-A, 1-B, 2-A …)마다 No / 학적반 / 수업반 / 학번 / 이름 / 상태 열을 사용합니다.</p>
+        <img src="img/roster-format-guide.svg" alt="엑셀 명단 형식 예시">
+      </div>
+    </div>
+
+    <div class="tab-view" id="tab-team">
+      <div id="teamEmptyState" class="empty-state">먼저 "명단 업로드" 탭에서 엑셀을 업로드해 주세요.</div>
+
+      <div id="teamContent" style="display:none">
+        <div class="grade-filter" id="teamGradeFilter">
+          <button type="button" class="grade-chip active" data-grade="1">1학년</button>
+          <button type="button" class="grade-chip" data-grade="2">2학년</button>
+          <button type="button" class="grade-chip" data-grade="3">3학년</button>
+        </div>
+
+        <div class="team-toolbar">
+          <div class="team-count-field">
+            <span>팀 개수</span>
+            <input type="number" id="teamCountInput" min="0" max="30" value="4">
+            <button type="button" class="apply-btn" id="teamCountApplyBtn">적용</button>
+          </div>
+          <button type="button" class="ghost-btn" id="clearGradeBtn">이 학년 배정 초기화</button>
+        </div>
+
+        <div class="team-body">
+          <div class="unassigned-panel">
+            <h3>미배정 학생 (<span id="unassignedCount">0</span>)</h3>
+            <div class="unassigned-list" id="unassignedList"></div>
+          </div>
+
+          <div id="teamBoard"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-view" id="tab-eval">
+      <div id="evalGateState" class="empty-state">먼저 "명단 업로드" 탭에서 엑셀을 업로드해 주세요.</div>
+
+      <div id="evalContent" style="display:none">
+        <div id="evalLookupView">
+          <div class="eval-card">
+            <h3>학번과 이름을 입력하세요</h3>
+            <p class="eval-hint">본인이 속한 팀의 팀원 목록이 표시됩니다.</p>
+            <div class="eval-input-row">
+              <input type="text" id="evalStudentId" class="input-field" placeholder="학번">
+              <input type="text" id="evalStudentName" class="input-field" placeholder="이름">
+              <button type="button" class="apply-btn" id="evalLookupBtn">조회</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="evalRatingView" style="display:none"></div>
+      </div>
+    </div>
+
+    <div class="tab-view" id="tab-results">
+      <div id="resultsLockView">
+        <div class="eval-card">
+          <h3>비밀번호를 입력하세요</h3>
+          <p class="eval-hint">평가 결과는 담당 교수만 확인할 수 있습니다. ("명단 업로드" 탭의 비밀번호와 동일)</p>
+          <div class="eval-input-row">
+            <input type="password" id="resultsPwInput" class="input-field" placeholder="비밀번호">
+            <button type="button" class="apply-btn" id="resultsUnlockBtn">확인</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="resultsContent" style="display:none">
+        <div class="grade-filter" id="resultsGradeFilter">
+          <button type="button" class="grade-chip active" data-grade="1">1학년</button>
+          <button type="button" class="grade-chip" data-grade="2">2학년</button>
+          <button type="button" class="grade-chip" data-grade="3">3학년</button>
+        </div>
+        <div class="roster-table-wrap">
+          <div class="roster-scroll">
+            <table class="roster-table">
+              <thead><tr><th>이름</th><th>학번</th><th>평균 점수</th></tr></thead>
+              <tbody id="resultsTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </section>
+</main>
+
+<footer class="wrap">
+  <span>연성대학교 게임콘텐츠과 · 프로젝트팀 생성기</span>
+  <span>내부 업무용 도구</span>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal-overlay" id="resetModalOverlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>전체 리셋</h3>
+      <button type="button" class="modal-close" id="resetModalClose">×</button>
+    </div>
+    <p class="eval-hint">비밀번호를 입력하면 명단·팀 배정·평가 데이터가 모두 삭제됩니다.</p>
+    <div class="field-row">
+      <input type="password" id="resetPwInput" class="input-field" placeholder="비밀번호">
+    </div>
+    <div class="pw-hint-text" id="resetPwHint"></div>
+    <div class="modal-actions">
+      <button type="button" class="apply-btn" id="resetConfirmBtn">전체 리셋 실행</button>
+      <button type="button" class="ghost-btn" id="resetChangePwToggle">비밀번호 변경</button>
+    </div>
+
+    <div class="change-pw-section" id="changePwSection" style="display:none">
+      <div class="field-row">
+        <input type="password" id="newPwInput" class="input-field" placeholder="새 비밀번호">
+      </div>
+      <div class="field-row" style="margin-top:8px">
+        <input type="password" id="newPwConfirmInput" class="input-field" placeholder="새 비밀번호 확인">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="apply-btn" id="changePwSaveBtn">비밀번호 변경 저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="uploadModeModalOverlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>업로드 방식 선택</h3>
+      <button type="button" class="modal-close" id="uploadModeModalClose">×</button>
+    </div>
+    <p class="eval-hint">기존에 업로드된 명단이 있습니다. 이 파일을 어떻게 반영할까요?</p>
+    <div class="modal-actions" style="flex-direction:column;align-items:stretch">
+      <button type="button" class="apply-btn" id="uploadModeUpdateBtn">기존 명단 갱신 (팀 배정 유지, 변경분만 반영)</button>
+      <button type="button" class="ghost-btn" id="uploadModeNewBtn">새 명단으로 전체 교체 (모든 자료 삭제)</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="resultDetailModalOverlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="resultDetailTitle"></h3>
+      <button type="button" class="modal-close" id="resultDetailClose">×</button>
+    </div>
+    <div id="resultDetailBody"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var ROLES = ['기획', '아트', '개발'];
+  var INDIVIDUAL_GRADES = ['2', '3'];
+  var STORAGE_KEY = 'teamProjectGenState_v1';
+  var PASSWORD_KEY = 'teamProjectGenPassword_v1';
+  var DEFAULT_PASSWORD = '1004';
+
+  function getPassword(){
+    try { return localStorage.getItem(PASSWORD_KEY) || DEFAULT_PASSWORD; } catch(e){ return DEFAULT_PASSWORD; }
+  }
+  function setPassword(pw){
+    try { localStorage.setItem(PASSWORD_KEY, pw); } catch(e){}
+  }
+  function passwordHint(pw){
+    if(pw.length <= 2) return pw;
+    return pw.charAt(0) + '*'.repeat(pw.length - 2) + pw.charAt(pw.length - 1);
+  }
+
+  var state = loadState();
+  if(!state.evaluations) state.evaluations = {};
+  var currentRosterFilter = 'all';
+  var currentTeamGrade = '1';
+  var currentResultsGrade = '1';
+  var resultsUnlocked = false;
+
+  var toast = document.getElementById('toast');
+  function showToast(msg){
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(function(){ toast.classList.remove('show'); }, 2200);
+  }
+
+  function loadState(){
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(raw) return JSON.parse(raw);
+    } catch(e){}
+    return { roster: [], teamsByGrade: {}, assignedMap: {}, evaluations: {} };
+  }
+  function saveState(){
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e){}
+  }
+
+  /* ============================================================
+   * 엑셀 파싱 — "No / 학적반 / 수업반 / 학번 / 이름" 형태의 시트를 찾아
+   * 실제 학생 행만 추려낸다 (하단 집계표·학적 변동 내역은 자동 제외).
+   * 시트 이름이 "1-A" 식이면 거기서 학년/반을 가져온다.
+   * ============================================================ */
+  function parseWorkbook(workbook){
+    var students = [];
+    workbook.SheetNames.forEach(function(sheetName){
+      var ws = workbook.Sheets[sheetName];
+      var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+      if(!rows.length) return;
+
+      var headerRowIdx = -1, header = null;
+      for(var i = 0; i < Math.min(rows.length, 5); i++){
+        var r = (rows[i] || []).map(function(v){ return v == null ? '' : String(v).trim(); });
+        if(r.indexOf('학번') !== -1 && r.indexOf('이름') !== -1){
+          headerRowIdx = i;
+          header = r;
+          break;
+        }
+      }
+      if(headerRowIdx === -1) return;
+
+      var idxNo = header.indexOf('No');
+      var idxHakbun = header.indexOf('학번');
+      var idxName = header.indexOf('이름');
+      var idxHakjuk = header.indexOf('학적반');
+
+      var m = sheetName.match(/^\s*(\d+)\s*-\s*([A-Za-z가-힣0-9])/);
+      var gradeFromSheet = m ? m[1] : '';
+      var classFromSheet = m ? m[2].toUpperCase() : '';
+
+      for(var r2 = headerRowIdx + 1; r2 < rows.length; r2++){
+        var row = rows[r2] || [];
+        var noVal = row[idxNo];
+        var hakbunStr = row[idxHakbun] == null ? '' : String(row[idxHakbun]).trim();
+        var nameStr = row[idxName] == null ? '' : String(row[idxName]).trim();
+        var isNoNumber = typeof noVal === 'number';
+        var isHakbunValid = /^\d{8,10}$/.test(hakbunStr);
+        if(isNoNumber && isHakbunValid && nameStr){
+          students.push({
+            grade: gradeFromSheet || '?',
+            section: classFromSheet || (idxHakjuk >= 0 ? String(row[idxHakjuk] || '').trim() : ''),
+            studentId: hakbunStr,
+            name: nameStr
+          });
+        }
+      }
+    });
+    return students;
+  }
+  window.__parseWorkbookForTest = parseWorkbook;
+
+  /* ---------- 업로드 ---------- */
+  var uploadZone = document.getElementById('uploadZone');
+  var fileInput = document.getElementById('fileInput');
+  var fileSelectBtn = document.getElementById('fileSelectBtn');
+
+  fileSelectBtn.addEventListener('click', function(){ fileInput.click(); });
+  fileInput.addEventListener('change', function(){
+    if(fileInput.files && fileInput.files[0]) handleFile(fileInput.files[0]);
+  });
+  ['dragenter','dragover'].forEach(function(evt){
+    uploadZone.addEventListener(evt, function(e){ e.preventDefault(); uploadZone.classList.add('drag-over'); });
+  });
+  ['dragleave','drop'].forEach(function(evt){
+    uploadZone.addEventListener(evt, function(e){ e.preventDefault(); uploadZone.classList.remove('drag-over'); });
+  });
+  uploadZone.addEventListener('drop', function(e){
+    var f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if(f) handleFile(f);
+  });
+
+  var pendingUploadRoster = null;
+
+  function handleFile(file){
+    var reader = new FileReader();
+    reader.onload = function(e){
+      var data = new Uint8Array(e.target.result);
+      var workbook;
+      try {
+        workbook = XLSX.read(data, { type: 'array' });
+      } catch(err){
+        showToast('엑셀 파일을 읽지 못했습니다');
+        return;
+      }
+      var roster = parseWorkbook(workbook);
+      if(roster.length === 0){
+        showToast('인식 가능한 학생 데이터를 찾지 못했습니다');
+        return;
+      }
+      if(state.roster.length === 0){
+        applyNewRoster(roster);
+        return;
+      }
+      pendingUploadRoster = roster;
+      document.getElementById('uploadModeModalOverlay').style.display = 'flex';
+    };
+    reader.readAsArrayBuffer(file);
+    fileInput.value = '';
+  }
+
+  function applyNewRoster(roster){
+    state.roster = roster;
+    state.teamsByGrade = {};
+    state.assignedMap = {};
+    state.evaluations = {};
+    saveState();
+    renderUploadSummary();
+    renderRosterTable();
+    renderTeamTab();
+    showToast(roster.length + '명의 학생 명단을 불러왔습니다');
+  }
+
+  function applyMergedRoster(newRoster){
+    var newIds = {};
+    newRoster.forEach(function(s){ newIds[s.studentId] = true; });
+    var oldIds = {};
+    state.roster.forEach(function(s){ oldIds[s.studentId] = true; });
+
+    var removedCount = 0;
+    state.roster.forEach(function(s){
+      if(!newIds[s.studentId]){
+        var info = state.assignedMap[s.studentId];
+        if(info) removeStudentFromAllSlots(info.grade, s.studentId);
+        removedCount++;
+      }
+    });
+    var addedCount = 0;
+    newRoster.forEach(function(s){ if(!oldIds[s.studentId]) addedCount++; });
+
+    state.roster = newRoster;
+    saveState();
+    renderUploadSummary();
+    renderRosterTable();
+    renderTeamTab();
+    showToast('명단이 갱신되었습니다 (신규 ' + addedCount + '명, 제거 ' + removedCount + '명, 기존 배정 유지)');
+  }
+
+  document.getElementById('uploadModeUpdateBtn').addEventListener('click', function(){
+    document.getElementById('uploadModeModalOverlay').style.display = 'none';
+    if(pendingUploadRoster) applyMergedRoster(pendingUploadRoster);
+    pendingUploadRoster = null;
+  });
+  document.getElementById('uploadModeNewBtn').addEventListener('click', function(){
+    if(!window.confirm('모든 자료(명단·팀 배정·평가 결과)가 삭제됩니다. 계속할까요?')) return;
+    document.getElementById('uploadModeModalOverlay').style.display = 'none';
+    if(pendingUploadRoster) applyNewRoster(pendingUploadRoster);
+    pendingUploadRoster = null;
+  });
+  document.getElementById('uploadModeModalClose').addEventListener('click', function(){
+    document.getElementById('uploadModeModalOverlay').style.display = 'none';
+    pendingUploadRoster = null;
+  });
+
+  /* ---------- 전체 리셋 (비밀번호 보호) ---------- */
+  var resetModalOverlay = document.getElementById('resetModalOverlay');
+  var resetPwInput = document.getElementById('resetPwInput');
+
+  function openResetModal(){
+    resetPwInput.value = '';
+    document.getElementById('newPwInput').value = '';
+    document.getElementById('newPwConfirmInput').value = '';
+    document.getElementById('changePwSection').style.display = 'none';
+    document.getElementById('resetPwHint').textContent = '힌트: ' + passwordHint(getPassword());
+    resetModalOverlay.style.display = 'flex';
+  }
+  function closeResetModal(){
+    resetModalOverlay.style.display = 'none';
+  }
+
+  document.getElementById('fullResetBtn').addEventListener('click', openResetModal);
+  document.getElementById('resetModalClose').addEventListener('click', closeResetModal);
+  resetModalOverlay.addEventListener('click', function(e){ if(e.target === resetModalOverlay) closeResetModal(); });
+
+  document.getElementById('resetConfirmBtn').addEventListener('click', function(){
+    if(resetPwInput.value !== getPassword()){
+      showToast('비밀번호가 일치하지 않습니다');
+      return;
+    }
+    if(!window.confirm('정말로 전체 데이터를 초기화하시겠습니까? 되돌릴 수 없습니다.')) return;
+    state.roster = [];
+    state.teamsByGrade = {};
+    state.assignedMap = {};
+    state.evaluations = {};
+    saveState();
+    closeResetModal();
+    renderUploadSummary();
+    renderRosterTable();
+    renderTeamTab();
+    resultsUnlocked = false;
+    showToast('전체 데이터가 초기화되었습니다');
+  });
+
+  document.getElementById('resetChangePwToggle').addEventListener('click', function(){
+    var section = document.getElementById('changePwSection');
+    section.style.display = section.style.display === 'none' ? 'block' : 'none';
+  });
+
+  document.getElementById('changePwSaveBtn').addEventListener('click', function(){
+    if(resetPwInput.value !== getPassword()){
+      showToast('현재 비밀번호가 일치하지 않습니다');
+      return;
+    }
+    var np = document.getElementById('newPwInput').value;
+    var npc = document.getElementById('newPwConfirmInput').value;
+    if(!np){
+      showToast('새 비밀번호를 입력해 주세요');
+      return;
+    }
+    if(np !== npc){
+      showToast('새 비밀번호가 일치하지 않습니다');
+      return;
+    }
+    setPassword(np);
+    document.getElementById('resetPwHint').textContent = '힌트: ' + passwordHint(np);
+    document.getElementById('newPwInput').value = '';
+    document.getElementById('newPwConfirmInput').value = '';
+    showToast('비밀번호가 변경되었습니다');
+  });
+
+  function renderUploadSummary(){
+    var summaryEl = document.getElementById('uploadSummary');
+    var gradeFilterEl = document.getElementById('rosterGradeFilter');
+    var tableWrapEl = document.getElementById('rosterTableWrap');
+    var emptyEl = document.getElementById('rosterEmptyState');
+    if(!state.roster.length){
+      summaryEl.style.display = 'none';
+      gradeFilterEl.style.display = 'none';
+      tableWrapEl.style.display = 'none';
+      emptyEl.style.display = 'block';
+      return;
+    }
+    var counts = { '1': 0, '2': 0, '3': 0 };
+    state.roster.forEach(function(s){ if(counts[s.grade] !== undefined) counts[s.grade]++; });
+    summaryEl.innerHTML =
+      '<span class="count-badge">전체 <b>' + state.roster.length + '</b>명</span>' +
+      '<span class="count-badge">1학년 <b>' + counts['1'] + '</b>명</span>' +
+      '<span class="count-badge">2학년 <b>' + counts['2'] + '</b>명</span>' +
+      '<span class="count-badge">3학년 <b>' + counts['3'] + '</b>명</span>';
+    summaryEl.style.display = 'flex';
+    gradeFilterEl.style.display = 'flex';
+    tableWrapEl.style.display = 'block';
+    emptyEl.style.display = 'none';
+  }
+
+  function renderRosterTable(){
+    var tbody = document.getElementById('rosterTbody');
+    tbody.innerHTML = '';
+    var list = state.roster.filter(function(s){
+      return currentRosterFilter === 'all' || s.grade === currentRosterFilter;
+    });
+    list.forEach(function(s){
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + escapeHtml(s.grade) + '학년</td><td>' + escapeHtml(s.section) + '</td>' +
+        '<td>' + escapeHtml(s.studentId) + '</td><td>' + escapeHtml(s.name) + '</td>';
+      tbody.appendChild(tr);
+    });
+  }
+
+  document.getElementById('rosterGradeFilter').addEventListener('click', function(e){
+    var btn = e.target.closest('.grade-chip');
+    if(!btn) return;
+    currentRosterFilter = btn.dataset.grade;
+    Array.prototype.forEach.call(this.querySelectorAll('.grade-chip'), function(b){
+      b.classList.toggle('active', b === btn);
+    });
+    renderRosterTable();
+  });
+
+  function escapeHtml(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(ch){
+      return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch];
+    });
+  }
+
+  /* ---------- 상단 탭 전환 ---------- */
+  document.querySelectorAll('.top-tab-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.top-tab-btn').forEach(function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      document.querySelectorAll('.tab-view').forEach(function(v){ v.classList.remove('active'); });
+      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      if(btn.dataset.tab === 'team') renderTeamTab();
+      if(btn.dataset.tab === 'eval') renderEvalTab();
+      if(btn.dataset.tab === 'results') renderResultsTab();
+    });
+  });
+
+  /* ============================================================
+   * 팀 배정
+   * ============================================================ */
+  function ensureGradeState(grade){
+    if(!state.teamsByGrade[grade]){
+      state.teamsByGrade[grade] = {
+        teamCount: 0,
+        teams: [],
+        individual: INDIVIDUAL_GRADES.indexOf(grade) !== -1 ? [] : undefined
+      };
+    }
+    return state.teamsByGrade[grade];
+  }
+
+  function gradeHasAssignments(grade){
+    var gd = state.teamsByGrade[grade];
+    if(!gd) return false;
+    var hasTeamMembers = (gd.teams || []).some(function(t){
+      return ROLES.some(function(role){ return (t.roles[role] || []).length > 0; });
+    });
+    var hasIndividual = (gd.individual || []).length > 0;
+    return hasTeamMembers || hasIndividual;
+  }
+
+  function clearGradeAssignments(grade){
+    var gd = state.teamsByGrade[grade];
+    if(!gd) return;
+    (gd.teams || []).forEach(function(t){
+      ROLES.forEach(function(role){
+        (t.roles[role] || []).forEach(function(sid){ delete state.assignedMap[sid]; });
+        t.roles[role] = [];
+      });
+    });
+    if(gd.individual){
+      gd.individual.forEach(function(sid){ delete state.assignedMap[sid]; });
+      gd.individual = [];
+    }
+  }
+
+  function removeStudentFromAllSlots(grade, studentId){
+    var gd = state.teamsByGrade[grade];
+    if(!gd) return;
+    (gd.teams || []).forEach(function(t){
+      ROLES.forEach(function(role){
+        t.roles[role] = (t.roles[role] || []).filter(function(id){ return id !== studentId; });
+      });
+    });
+    if(gd.individual){
+      gd.individual = gd.individual.filter(function(id){ return id !== studentId; });
+    }
+    delete state.assignedMap[studentId];
+  }
+
+  function assignStudent(grade, studentId, target, role){
+    removeStudentFromAllSlots(grade, studentId);
+    var gd = ensureGradeState(grade);
+    if(target === 'individual'){
+      gd.individual.push(studentId);
+      state.assignedMap[studentId] = { grade: grade, target: 'individual' };
+    } else {
+      var team = gd.teams.filter(function(t){ return t.id === target; })[0];
+      if(!team) return;
+      team.roles[role].push(studentId);
+      state.assignedMap[studentId] = { grade: grade, target: target, role: role };
+    }
+    saveState();
+  }
+
+  function renderTeamTab(){
+    var emptyEl = document.getElementById('teamEmptyState');
+    var contentEl = document.getElementById('teamContent');
+    if(!state.roster.length){
+      emptyEl.style.display = 'block';
+      contentEl.style.display = 'none';
+      return;
+    }
+    emptyEl.style.display = 'none';
+    contentEl.style.display = 'block';
+    var gd = ensureGradeState(currentTeamGrade);
+    document.getElementById('teamCountInput').value = gd.teamCount;
+    renderTeamBoard();
+  }
+
+  document.getElementById('teamGradeFilter').addEventListener('click', function(e){
+    var btn = e.target.closest('.grade-chip');
+    if(!btn) return;
+    currentTeamGrade = btn.dataset.grade;
+    Array.prototype.forEach.call(this.querySelectorAll('.grade-chip'), function(b){
+      b.classList.toggle('active', b === btn);
+    });
+    var gd = ensureGradeState(currentTeamGrade);
+    document.getElementById('teamCountInput').value = gd.teamCount;
+    renderTeamBoard();
+  });
+
+  document.getElementById('teamCountApplyBtn').addEventListener('click', function(){
+    var input = document.getElementById('teamCountInput');
+    var newCount = Math.max(0, Math.min(30, parseInt(input.value, 10) || 0));
+    var grade = currentTeamGrade;
+    var gd = ensureGradeState(grade);
+    var oldCount = gd.teamCount;
+
+    if(newCount === oldCount){
+      showToast('이미 ' + newCount + '개 팀으로 설정되어 있습니다');
+      return;
+    }
+
+    if(newCount > oldCount){
+      for(var i = oldCount + 1; i <= newCount; i++){
+        gd.teams.push({ id: 't' + i, name: i + '팀', roles: { '기획': [], '아트': [], '개발': [] } });
+      }
+      gd.teamCount = newCount;
+      saveState();
+      renderTeamBoard();
+      showToast('팀이 ' + (newCount - oldCount) + '개 추가되었습니다 (총 ' + newCount + '개)');
+      return;
+    }
+
+    // newCount < oldCount: 뒤쪽 팀부터 제거. 제거될 팀에 배정된 학생이 있으면 확인 후 미배정으로 되돌림
+    var removedTeams = gd.teams.slice(newCount);
+    var hasMembers = removedTeams.some(function(t){
+      return ROLES.some(function(role){ return (t.roles[role] || []).length > 0; });
+    });
+    if(hasMembers){
+      if(!window.confirm('팀 개수를 줄이면 뒤쪽 팀에 배정된 학생이 미배정으로 돌아갑니다. 계속할까요?')){
+        input.value = oldCount;
+        return;
+      }
+    }
+    removedTeams.forEach(function(t){
+      ROLES.forEach(function(role){
+        (t.roles[role] || []).forEach(function(sid){ delete state.assignedMap[sid]; });
+      });
+    });
+    gd.teams = gd.teams.slice(0, newCount);
+    gd.teamCount = newCount;
+    saveState();
+    renderTeamBoard();
+    showToast('팀이 ' + newCount + '개로 줄었습니다');
+  });
+
+  document.getElementById('clearGradeBtn').addEventListener('click', function(){
+    var grade = currentTeamGrade;
+    if(!gradeHasAssignments(grade)){
+      showToast('이미 배정된 학생이 없습니다');
+      return;
+    }
+    if(!window.confirm(grade + '학년의 모든 팀 배정을 초기화하시겠습니까?')) return;
+    clearGradeAssignments(grade);
+    saveState();
+    renderTeamBoard();
+    showToast('초기화되었습니다');
+  });
+
+  function studentById(sid){
+    for(var i = 0; i < state.roster.length; i++){
+      if(state.roster[i].studentId === sid) return state.roster[i];
+    }
+    return null;
+  }
+
+  function makeChip(student, removable, onRemove){
+    var chip = document.createElement('div');
+    chip.className = 'student-chip';
+    chip.draggable = true;
+    chip.dataset.sid = student.studentId;
+    var label = document.createElement('span');
+    label.innerHTML = escapeHtml(student.name) + ' <span class="sid">' + escapeHtml(student.studentId) + '</span>';
+    chip.appendChild(label);
+    if(removable){
+      var rm = document.createElement('button');
+      rm.type = 'button';
+      rm.className = 'chip-remove';
+      rm.title = '미배정으로 되돌리기';
+      rm.textContent = '×';
+      rm.addEventListener('click', function(ev){
+        ev.stopPropagation();
+        onRemove();
+      });
+      chip.appendChild(rm);
+    }
+    chip.addEventListener('dragstart', function(e){
+      e.dataTransfer.setData('text/plain', student.studentId);
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    return chip;
+  }
+
+  function wireDropZone(el, onDrop){
+    el.addEventListener('dragover', function(e){ e.preventDefault(); el.classList.add('drag-over'); });
+    el.addEventListener('dragleave', function(){ el.classList.remove('drag-over'); });
+    el.addEventListener('drop', function(e){
+      e.preventDefault();
+      el.classList.remove('drag-over');
+      var sid = e.dataTransfer.getData('text/plain');
+      if(sid) onDrop(sid);
+    });
+  }
+
+  function renderTeamBoard(){
+    var grade = currentTeamGrade;
+    var gd = ensureGradeState(grade);
+
+    var unassigned = state.roster.filter(function(s){
+      return s.grade === grade && !state.assignedMap[s.studentId];
+    });
+    document.getElementById('unassignedCount').textContent = unassigned.length;
+    var unassignedList = document.getElementById('unassignedList');
+    unassignedList.innerHTML = '';
+    if(unassigned.length === 0){
+      var empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.style.padding = '10px 4px';
+      empty.textContent = '모두 배정되었습니다';
+      unassignedList.appendChild(empty);
+    } else {
+      unassigned.forEach(function(s){
+        unassignedList.appendChild(makeChip(s, false, null));
+      });
+    }
+
+    var board = document.getElementById('teamBoard');
+    board.innerHTML = '';
+
+    var indivCard = null;
+    if(INDIVIDUAL_GRADES.indexOf(grade) !== -1){
+      indivCard = document.createElement('div');
+      indivCard.className = 'individual-card';
+      indivCard.innerHTML = '<div class="team-card-head">개인프로젝트 (' + (gd.individual || []).length + '명) — 자동 생성</div>';
+      var indivZone = document.createElement('div');
+      indivZone.className = 'drop-zone';
+      (gd.individual || []).forEach(function(sid){
+        var s = studentById(sid);
+        if(!s) return;
+        indivZone.appendChild(makeChip(s, true, function(){
+          removeStudentFromAllSlots(grade, sid);
+          saveState();
+          renderTeamBoard();
+        }));
+      });
+      wireDropZone(indivZone, function(sid){
+        assignStudent(grade, sid, 'individual', null);
+        renderTeamBoard();
+      });
+      indivCard.appendChild(indivZone);
+    }
+
+    var grid = document.createElement('div');
+    grid.className = 'team-grid';
+    (gd.teams || []).forEach(function(team){
+      var card = document.createElement('div');
+      card.className = 'team-card';
+      var totalInTeam = ROLES.reduce(function(sum, role){ return sum + (team.roles[role] || []).length; }, 0);
+      var head = document.createElement('div');
+      head.className = 'team-card-head';
+      head.textContent = team.name + ' (' + totalInTeam + '명)';
+      card.appendChild(head);
+
+      var roleCols = document.createElement('div');
+      roleCols.className = 'role-cols';
+      ROLES.forEach(function(role){
+        var col = document.createElement('div');
+        col.className = 'role-col';
+        var label = document.createElement('div');
+        label.className = 'role-label';
+        label.textContent = role;
+        col.appendChild(label);
+        var zone = document.createElement('div');
+        zone.className = 'drop-zone';
+        (team.roles[role] || []).forEach(function(sid){
+          var s = studentById(sid);
+          if(!s) return;
+          zone.appendChild(makeChip(s, true, function(){
+            removeStudentFromAllSlots(grade, sid);
+            saveState();
+            renderTeamBoard();
+          }));
+        });
+        (function(teamId, roleName){
+          wireDropZone(zone, function(sid){
+            assignStudent(grade, sid, teamId, roleName);
+            renderTeamBoard();
+          });
+        })(team.id, role);
+        col.appendChild(zone);
+        roleCols.appendChild(col);
+      });
+      card.appendChild(roleCols);
+      grid.appendChild(card);
+    });
+
+    if((gd.teams || []).length){
+      board.appendChild(grid);
+    } else {
+      var noTeams = document.createElement('div');
+      noTeams.className = 'empty-state';
+      noTeams.textContent = '팀 개수를 정하고 "적용"을 눌러 팀을 생성해 주세요.';
+      board.appendChild(noTeams);
+    }
+
+    // 2·3학년 개인프로젝트는 항상 팀들 뒤에 배치
+    if(indivCard) board.appendChild(indivCard);
+  }
+
+  /* ============================================================
+   * 기여도 평가 — 모든 학생이 배정된 뒤에만 이용 가능
+   * ============================================================ */
+  function countUnassignedTotal(){
+    return state.roster.filter(function(s){ return !state.assignedMap[s.studentId]; }).length;
+  }
+
+  function renderEvalTab(){
+    var gateEl = document.getElementById('evalGateState');
+    var contentEl = document.getElementById('evalContent');
+    if(!state.roster.length){
+      gateEl.style.display = 'block';
+      gateEl.textContent = '먼저 "명단 업로드" 탭에서 엑셀을 업로드해 주세요.';
+      contentEl.style.display = 'none';
+      return;
+    }
+    var unassignedTotal = countUnassignedTotal();
+    if(unassignedTotal > 0){
+      var byGrade = { '1': 0, '2': 0, '3': 0 };
+      state.roster.forEach(function(s){
+        if(!state.assignedMap[s.studentId] && byGrade[s.grade] !== undefined) byGrade[s.grade]++;
+      });
+      gateEl.style.display = 'block';
+      gateEl.textContent = '아직 배정되지 않은 학생이 ' + unassignedTotal + '명 있습니다 (1학년 ' + byGrade['1'] +
+        '명, 2학년 ' + byGrade['2'] + '명, 3학년 ' + byGrade['3'] +
+        '명). "팀 배정" 탭에서 모든 학생을 배치한 후 이용할 수 있습니다.';
+      contentEl.style.display = 'none';
+      return;
+    }
+    gateEl.style.display = 'none';
+    contentEl.style.display = 'block';
+    showEvalLookupView();
+  }
+
+  function showEvalLookupView(){
+    document.getElementById('evalLookupView').style.display = 'block';
+    var ratingView = document.getElementById('evalRatingView');
+    ratingView.style.display = 'none';
+    ratingView.innerHTML = '';
+    document.getElementById('evalStudentId').value = '';
+    document.getElementById('evalStudentName').value = '';
+  }
+
+  document.getElementById('evalLookupBtn').addEventListener('click', function(){
+    var sid = document.getElementById('evalStudentId').value.trim();
+    var name = document.getElementById('evalStudentName').value.trim();
+    if(!sid || !name){
+      showToast('학번과 이름을 모두 입력해 주세요');
+      return;
+    }
+    var student = state.roster.filter(function(s){ return s.studentId === sid && s.name === name; })[0];
+    if(!student){
+      showToast('학번과 이름이 일치하는 학생을 찾을 수 없습니다');
+      return;
+    }
+    renderEvalRating(student);
+  });
+
+  function renderEvalRating(student){
+    var info = state.assignedMap[student.studentId];
+    var view = document.getElementById('evalRatingView');
+    view.innerHTML = '';
+    document.getElementById('evalLookupView').style.display = 'none';
+    view.style.display = 'block';
+
+    var card = document.createElement('div');
+    card.className = 'eval-rating-card';
+
+    if(!info || info.target === 'individual'){
+      var head0 = document.createElement('div');
+      head0.className = 'eval-rating-head';
+      head0.innerHTML = '<h3>' + escapeHtml(student.name) + '님은 개인프로젝트입니다</h3><p>개인프로젝트는 평가할 팀원이 없습니다.</p>';
+      card.appendChild(head0);
+      var backBtn = document.createElement('button');
+      backBtn.type = 'button';
+      backBtn.className = 'ghost-btn';
+      backBtn.textContent = '다시 조회';
+      backBtn.addEventListener('click', showEvalLookupView);
+      card.appendChild(backBtn);
+      view.appendChild(card);
+      return;
+    }
+
+    var gd = state.teamsByGrade[info.grade];
+    var team = gd ? gd.teams.filter(function(t){ return t.id === info.target; })[0] : null;
+    if(!team){
+      showEvalLookupView();
+      showToast('팀 정보를 찾을 수 없습니다');
+      return;
+    }
+
+    var teammates = [];
+    ROLES.forEach(function(role){
+      (team.roles[role] || []).forEach(function(sid2){
+        if(sid2 === student.studentId) return;
+        var s = studentById(sid2);
+        if(s) teammates.push({ student: s, role: role });
+      });
+    });
+
+    var head = document.createElement('div');
+    head.className = 'eval-rating-head';
+    head.innerHTML = '<h3>' + escapeHtml(student.grade) + '학년 ' + escapeHtml(team.name) + ' · ' + escapeHtml(student.name) + '님</h3>' +
+      '<p>팀원의 기여도를 1점(낮음)~5점(높음)으로 평가해 주세요.</p>';
+    card.appendChild(head);
+
+    if(teammates.length === 0){
+      var noMate = document.createElement('p');
+      noMate.className = 'eval-hint';
+      noMate.textContent = '같은 팀에 다른 팀원이 없습니다.';
+      card.appendChild(noMate);
+      var backBtn3 = document.createElement('button');
+      backBtn3.type = 'button';
+      backBtn3.className = 'ghost-btn';
+      backBtn3.textContent = '다시 조회';
+      backBtn3.addEventListener('click', showEvalLookupView);
+      card.appendChild(backBtn3);
+    } else {
+      var savedScores = state.evaluations[student.studentId] || {};
+      teammates.forEach(function(tm){
+        var row = document.createElement('div');
+        row.className = 'teammate-row';
+        var info2 = document.createElement('div');
+        info2.className = 'teammate-info';
+        info2.innerHTML = '<span class="teammate-name">' + escapeHtml(tm.student.name) + '</span>' +
+          '<span class="teammate-meta">' + escapeHtml(tm.role) + ' · ' + escapeHtml(tm.student.studentId) + '</span>';
+        row.appendChild(info2);
+
+        var scoreGroup = document.createElement('div');
+        scoreGroup.className = 'score-group';
+        scoreGroup.dataset.sid = tm.student.studentId;
+        for(var sc = 1; sc <= 5; sc++){
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'score-btn';
+          btn.textContent = String(sc);
+          btn.dataset.score = sc;
+          if(savedScores[tm.student.studentId] === sc) btn.classList.add('active');
+          (function(group, value){
+            btn.addEventListener('click', function(){
+              Array.prototype.forEach.call(group.querySelectorAll('.score-btn'), function(b){
+                b.classList.toggle('active', Number(b.dataset.score) === value);
+              });
+            });
+          })(scoreGroup, sc);
+          scoreGroup.appendChild(btn);
+        }
+        row.appendChild(scoreGroup);
+        card.appendChild(row);
+      });
+
+      var actions = document.createElement('div');
+      actions.className = 'eval-actions';
+      var backBtn2 = document.createElement('button');
+      backBtn2.type = 'button';
+      backBtn2.className = 'ghost-btn';
+      backBtn2.textContent = '취소';
+      backBtn2.addEventListener('click', showEvalLookupView);
+      var saveBtn = document.createElement('button');
+      saveBtn.type = 'button';
+      saveBtn.className = 'apply-btn';
+      saveBtn.textContent = '평가 제출';
+      saveBtn.addEventListener('click', function(){
+        var groups = card.querySelectorAll('.score-group');
+        var scores = {};
+        var missing = false;
+        groups.forEach(function(g){
+          var activeBtn = g.querySelector('.score-btn.active');
+          if(!activeBtn){ missing = true; return; }
+          scores[g.dataset.sid] = Number(activeBtn.dataset.score);
+        });
+        if(missing){
+          showToast('모든 팀원에게 점수를 선택해 주세요');
+          return;
+        }
+        state.evaluations[student.studentId] = scores;
+        saveState();
+        showToast('평가가 저장되었습니다');
+        showEvalLookupView();
+      });
+      actions.appendChild(backBtn2);
+      actions.appendChild(saveBtn);
+      card.appendChild(actions);
+    }
+
+    view.appendChild(card);
+  }
+
+  /* ============================================================
+   * 평가 결과 — 비밀번호(명단 업로드와 동일)로 잠금
+   * ============================================================ */
+  function computeIncomingRatings(studentId){
+    var ratings = [];
+    Object.keys(state.evaluations).forEach(function(evaluatorId){
+      var scores = state.evaluations[evaluatorId];
+      if(scores && scores[studentId] !== undefined){
+        var evaluator = studentById(evaluatorId);
+        ratings.push({
+          evaluatorId: evaluatorId,
+          evaluatorName: evaluator ? evaluator.name : evaluatorId,
+          score: scores[studentId]
+        });
+      }
+    });
+    return ratings;
+  }
+
+  function renderResultsTab(){
+    if(!resultsUnlocked){
+      document.getElementById('resultsLockView').style.display = 'block';
+      document.getElementById('resultsContent').style.display = 'none';
+      document.getElementById('resultsPwInput').value = '';
+      return;
+    }
+    document.getElementById('resultsLockView').style.display = 'none';
+    document.getElementById('resultsContent').style.display = 'block';
+    renderResultsList(currentResultsGrade);
+  }
+
+  document.getElementById('resultsUnlockBtn').addEventListener('click', function(){
+    var pw = document.getElementById('resultsPwInput').value;
+    if(pw !== getPassword()){
+      showToast('비밀번호가 일치하지 않습니다');
+      return;
+    }
+    resultsUnlocked = true;
+    renderResultsTab();
+  });
+
+  document.getElementById('resultsGradeFilter').addEventListener('click', function(e){
+    var btn = e.target.closest('.grade-chip');
+    if(!btn) return;
+    currentResultsGrade = btn.dataset.grade;
+    Array.prototype.forEach.call(this.querySelectorAll('.grade-chip'), function(b){
+      b.classList.toggle('active', b === btn);
+    });
+    renderResultsList(currentResultsGrade);
+  });
+
+  function renderResultsList(grade){
+    var tbody = document.getElementById('resultsTbody');
+    tbody.innerHTML = '';
+    var students = state.roster.filter(function(s){ return s.grade === grade; });
+    if(students.length === 0){
+      tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--dim)">해당 학년 학생이 없습니다</td></tr>';
+      return;
+    }
+    students.forEach(function(s){
+      var ratings = computeIncomingRatings(s.studentId);
+      var avg = ratings.length
+        ? (ratings.reduce(function(sum, r){ return sum + r.score; }, 0) / ratings.length).toFixed(1)
+        : '-';
+      var tr = document.createElement('tr');
+      var tdName = document.createElement('td');
+      var link = document.createElement('button');
+      link.type = 'button';
+      link.className = 'name-link';
+      link.textContent = s.name;
+      link.addEventListener('click', function(){ openResultDetail(s, ratings, avg); });
+      tdName.appendChild(link);
+      var tdSid = document.createElement('td');
+      tdSid.textContent = s.studentId;
+      var tdAvg = document.createElement('td');
+      tdAvg.textContent = avg;
+      tr.appendChild(tdName);
+      tr.appendChild(tdSid);
+      tr.appendChild(tdAvg);
+      tbody.appendChild(tr);
+    });
+  }
+
+  function openResultDetail(student, ratings, avg){
+    document.getElementById('resultDetailTitle').textContent = student.name + ' (' + student.studentId + ') 평가 내역';
+    var body = document.getElementById('resultDetailBody');
+    if(ratings.length === 0){
+      body.innerHTML = '<p class="eval-hint">아직 받은 평가가 없습니다.</p>';
+    } else {
+      var rows = ratings.map(function(r){
+        return '<div class="teammate-row"><span>' + escapeHtml(r.evaluatorName) + ' (' + escapeHtml(r.evaluatorId) + ')</span>' +
+          '<b>' + r.score + '점</b></div>';
+      }).join('');
+      body.innerHTML = rows + '<p class="eval-hint" style="margin:14px 0 0">평균 ' + avg + '점 (' + ratings.length + '명 평가)</p>';
+    }
+    document.getElementById('resultDetailModalOverlay').style.display = 'flex';
+  }
+
+  document.getElementById('resultDetailClose').addEventListener('click', function(){
+    document.getElementById('resultDetailModalOverlay').style.display = 'none';
+  });
+  document.getElementById('resultDetailModalOverlay').addEventListener('click', function(e){
+    if(e.target === this) this.style.display = 'none';
+  });
+
+  /* ---------- 초기 렌더 ---------- */
+  renderUploadSummary();
+  renderRosterTable();
+  renderTeamTab();
+})();
+</script>
+</body>
+</html>
