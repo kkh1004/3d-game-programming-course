@@ -217,6 +217,7 @@
   }
   .eval-card h3{font-size:1.1rem;font-weight:700;margin-bottom:8px}
   .eval-hint{color:var(--muted);font-size:13.5px;margin-bottom:20px}
+  .eval-hint code{background:rgba(255,255,255,.08);padding:1px 6px;border-radius:5px;font-size:12px}
   .eval-input-row{display:flex;gap:10px;flex-wrap:wrap}
   .input-field{
     flex:1 1 140px;font-family:inherit;font-size:14px;color:var(--text);
@@ -464,6 +465,7 @@
     <div class="modal-actions">
       <button type="button" class="apply-btn" id="resetConfirmBtn">전체 리셋 실행</button>
       <button type="button" class="ghost-btn" id="resetChangePwToggle">비밀번호 변경</button>
+      <button type="button" class="ghost-btn" id="exportStateBtn">현재 상태 내보내기</button>
     </div>
 
     <div class="change-pw-section" id="changePwSection" style="display:none">
@@ -475,6 +477,14 @@
       </div>
       <div class="modal-actions">
         <button type="button" class="apply-btn" id="changePwSaveBtn">비밀번호 변경 저장</button>
+      </div>
+    </div>
+
+    <div class="change-pw-section" id="exportSection" style="display:none">
+      <p class="eval-hint">아래 코드를 복사해서 <code>index3.html</code> 상단의 <code>SEED_STATE</code> 값에 붙여넣고 커밋·푸시하면, 접속하는 모든 사람이 이 상태를 기본으로 보게 됩니다. (점수는 원문이 아니라 팀 구성 순서를 기준으로 인코딩된 숫자로만 저장됩니다)</p>
+      <textarea id="exportOutput" class="input-field" style="width:100%;min-height:160px;font-family:monospace;font-size:11.5px;resize:vertical" readonly></textarea>
+      <div class="modal-actions">
+        <button type="button" class="apply-btn" id="exportCopyBtn">복사</button>
       </div>
     </div>
   </div>
@@ -523,8 +533,79 @@
     return pw.charAt(0) + '*'.repeat(pw.length - 2) + pw.charAt(pw.length - 1);
   }
 
+  /* ============================================================
+   * SEED_STATE — "현재 상태 내보내기"로 생성한 코드를 여기에 붙여넣으면
+   * localStorage가 비어있는(=처음 접속하는) 방문자에게도 같은 명단·팀·
+   * 평가 결과가 기본값으로 보입니다. 점수는 이름표가 붙은 형태가 아니라
+   * 팀 구성 순서를 기준으로 한 숫자 배열(evalCode)로만 저장되어,
+   * 코드를 훑어봐도 "누가 몇 점"인지 바로 알아보기 어렵습니다.
+   * (완전한 암호화는 아니며, 코드를 분석하면 규칙을 알아낼 수 있습니다)
+   * ============================================================ */
+  var SEED_STATE = null;
+
+  function canonicalRatingPairs(teamsByGrade){
+    var pairs = [];
+    ['1', '2', '3'].forEach(function(grade){
+      var gd = teamsByGrade[grade];
+      if(!gd) return;
+      (gd.teams || []).forEach(function(team){
+        var members = [];
+        ROLES.forEach(function(role){
+          (team.roles[role] || []).forEach(function(sid){ members.push(sid); });
+        });
+        members.forEach(function(evaluator){
+          members.forEach(function(evaluatee){
+            if(evaluator === evaluatee) return;
+            pairs.push([evaluator, evaluatee]);
+          });
+        });
+      });
+    });
+    return pairs;
+  }
+
+  function encodeEvaluations(){
+    var pairs = canonicalRatingPairs(state.teamsByGrade);
+    return pairs.map(function(p){
+      var scores = state.evaluations[p[0]];
+      return (scores && scores[p[1]] !== undefined) ? scores[p[1]] : 0;
+    });
+  }
+
+  function decodeEvaluations(arr, teamsByGrade){
+    var pairs = canonicalRatingPairs(teamsByGrade);
+    var out = {};
+    (arr || []).forEach(function(v, i){
+      if(!v) return;
+      var p = pairs[i];
+      if(!p) return;
+      if(!out[p[0]]) out[p[0]] = {};
+      out[p[0]][p[1]] = v;
+    });
+    return out;
+  }
+
+  function rebuildAssignedMap(teamsByGrade){
+    var map = {};
+    Object.keys(teamsByGrade).forEach(function(grade){
+      var gd = teamsByGrade[grade];
+      (gd.teams || []).forEach(function(team){
+        ROLES.forEach(function(role){
+          (team.roles[role] || []).forEach(function(sid){
+            map[sid] = { grade: grade, target: team.id, role: role };
+          });
+        });
+      });
+      (gd.individual || []).forEach(function(sid){
+        map[sid] = { grade: grade, target: 'individual' };
+      });
+    });
+    return map;
+  }
+
   var state = loadState();
   if(!state.evaluations) state.evaluations = {};
+  saveState();
   var currentRosterFilter = 'all';
   var currentTeamGrade = '1';
   var currentResultsGrade = '1';
@@ -542,6 +623,15 @@
       var raw = localStorage.getItem(STORAGE_KEY);
       if(raw) return JSON.parse(raw);
     } catch(e){}
+    if(SEED_STATE && SEED_STATE.roster && SEED_STATE.roster.length){
+      var teamsByGrade = SEED_STATE.teamsByGrade || {};
+      return {
+        roster: SEED_STATE.roster,
+        teamsByGrade: teamsByGrade,
+        assignedMap: rebuildAssignedMap(teamsByGrade),
+        evaluations: decodeEvaluations(SEED_STATE.evalCode, teamsByGrade)
+      };
+    }
     return { roster: [], teamsByGrade: {}, assignedMap: {}, evaluations: {} };
   }
   function saveState(){
@@ -712,6 +802,8 @@
     document.getElementById('newPwInput').value = '';
     document.getElementById('newPwConfirmInput').value = '';
     document.getElementById('changePwSection').style.display = 'none';
+    document.getElementById('exportSection').style.display = 'none';
+    document.getElementById('exportOutput').value = '';
     document.getElementById('resetPwHint').textContent = '힌트: ' + passwordHint(getPassword());
     resetModalOverlay.style.display = 'flex';
   }
@@ -767,6 +859,52 @@
     document.getElementById('newPwInput').value = '';
     document.getElementById('newPwConfirmInput').value = '';
     showToast('비밀번호가 변경되었습니다');
+  });
+
+  function legacyCopyText(text){
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch(e){ ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  document.getElementById('exportStateBtn').addEventListener('click', function(){
+    if(resetPwInput.value !== getPassword()){
+      showToast('비밀번호가 일치하지 않습니다');
+      return;
+    }
+    if(!state.roster.length){
+      showToast('내보낼 명단이 없습니다');
+      return;
+    }
+    var snapshot = {
+      roster: state.roster,
+      teamsByGrade: state.teamsByGrade,
+      evalCode: encodeEvaluations()
+    };
+    document.getElementById('exportOutput').value = 'var SEED_STATE = ' + JSON.stringify(snapshot) + ';';
+    var section = document.getElementById('exportSection');
+    section.style.display = section.style.display === 'none' ? 'block' : 'none';
+  });
+
+  document.getElementById('exportCopyBtn').addEventListener('click', function(){
+    var text = document.getElementById('exportOutput').value;
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){
+        showToast('복사되었습니다');
+      }).catch(function(){
+        showToast(legacyCopyText(text) ? '복사되었습니다' : '복사에 실패했습니다');
+      });
+    } else {
+      showToast(legacyCopyText(text) ? '복사되었습니다' : '복사에 실패했습니다');
+    }
   });
 
   function renderUploadSummary(){
