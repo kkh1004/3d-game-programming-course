@@ -543,6 +543,45 @@
    * ============================================================ */
   var SEED_STATE = null;
 
+  /* ============================================================
+   * API_URL — Google Apps Script 웹앱 URL (apps-script/Code.gs 참고).
+   * 값이 있으면 명단·팀 배정·평가가 서버에 저장되어 모든 방문자가
+   * 같은 데이터를 보게 됩니다. 비워두면 예전처럼 브라우저에만 저장됩니다.
+   * ============================================================ */
+  var API_URL = '';
+
+  function callServer(action, payload, password, onDone){
+    if(!API_URL){ onDone(null); return; }
+    fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: action, payload: payload || {}, password: password })
+    })
+      .then(function(r){ return r.json(); })
+      .then(function(res){ onDone(res); })
+      .catch(function(){
+        showToast('서버 연결에 실패해 이 브라우저에만 저장합니다');
+        onDone(null);
+      });
+  }
+
+  function syncFromServer(){
+    if(!API_URL) return;
+    fetch(API_URL + '?action=state')
+      .then(function(r){ return r.json(); })
+      .then(function(res){
+        if(!res || !res.ok || !res.state) return;
+        state = res.state;
+        if(!state.evaluations) state.evaluations = {};
+        saveState();
+        renderUploadSummary();
+        renderRosterTable();
+        renderTeamTab();
+        if(resultsUnlocked) renderResultsTab();
+      })
+      .catch(function(){});
+  }
+
   function canonicalRatingPairs(teamsByGrade){
     var pairs = [];
     ['1', '2', '3'].forEach(function(grade){
@@ -740,16 +779,26 @@
     fileInput.value = '';
   }
 
-  function applyNewRoster(roster){
-    state.roster = roster;
-    state.teamsByGrade = {};
-    state.assignedMap = {};
-    state.evaluations = {};
+  function afterRosterChange(){
     saveState();
     renderUploadSummary();
     renderRosterTable();
     renderTeamTab();
-    showToast(roster.length + '명의 학생 명단을 불러왔습니다');
+  }
+
+  function applyNewRoster(roster){
+    callServer('uploadRoster', { roster: roster }, null, function(res){
+      if(res && res.ok && res.state){
+        state = res.state;
+      } else {
+        state.roster = roster;
+        state.teamsByGrade = {};
+        state.assignedMap = {};
+        state.evaluations = {};
+      }
+      afterRosterChange();
+      showToast(roster.length + '명의 학생 명단을 불러왔습니다');
+    });
   }
 
   function applyMergedRoster(newRoster){
@@ -759,22 +808,25 @@
     state.roster.forEach(function(s){ oldIds[s.studentId] = true; });
 
     var removedCount = 0;
-    state.roster.forEach(function(s){
-      if(!newIds[s.studentId]){
-        var info = state.assignedMap[s.studentId];
-        if(info) removeStudentFromAllSlots(info.grade, s.studentId);
-        removedCount++;
-      }
-    });
+    state.roster.forEach(function(s){ if(!newIds[s.studentId]) removedCount++; });
     var addedCount = 0;
     newRoster.forEach(function(s){ if(!oldIds[s.studentId]) addedCount++; });
 
-    state.roster = newRoster;
-    saveState();
-    renderUploadSummary();
-    renderRosterTable();
-    renderTeamTab();
-    showToast('명단이 갱신되었습니다 (신규 ' + addedCount + '명, 제거 ' + removedCount + '명, 기존 배정 유지)');
+    callServer('mergeRoster', { roster: newRoster }, null, function(res){
+      if(res && res.ok && res.state){
+        state = res.state;
+      } else {
+        state.roster.forEach(function(s){
+          if(!newIds[s.studentId]){
+            var info = state.assignedMap[s.studentId];
+            if(info) removeStudentFromAllSlots(info.grade, s.studentId);
+          }
+        });
+        state.roster = newRoster;
+      }
+      afterRosterChange();
+      showToast('명단이 갱신되었습니다 (신규 ' + addedCount + '명, 제거 ' + removedCount + '명, 기존 배정 유지)');
+    });
   }
 
   document.getElementById('uploadModeUpdateBtn').addEventListener('click', function(){
@@ -816,22 +868,29 @@
   resetModalOverlay.addEventListener('click', function(e){ if(e.target === resetModalOverlay) closeResetModal(); });
 
   document.getElementById('resetConfirmBtn').addEventListener('click', function(){
-    if(resetPwInput.value !== getPassword()){
+    if(!API_URL && resetPwInput.value !== getPassword()){
       showToast('비밀번호가 일치하지 않습니다');
       return;
     }
     if(!window.confirm('정말로 전체 데이터를 초기화하시겠습니까? 되돌릴 수 없습니다.')) return;
-    state.roster = [];
-    state.teamsByGrade = {};
-    state.assignedMap = {};
-    state.evaluations = {};
-    saveState();
-    closeResetModal();
-    renderUploadSummary();
-    renderRosterTable();
-    renderTeamTab();
-    resultsUnlocked = false;
-    showToast('전체 데이터가 초기화되었습니다');
+    callServer('resetAll', {}, resetPwInput.value, function(res){
+      if(res && !res.ok){
+        showToast('초기화에 실패했습니다: ' + (res.error || '알 수 없는 오류'));
+        return;
+      }
+      if(res && res.state){
+        state = res.state;
+      } else {
+        state.roster = [];
+        state.teamsByGrade = {};
+        state.assignedMap = {};
+        state.evaluations = {};
+      }
+      closeResetModal();
+      afterRosterChange();
+      resultsUnlocked = false;
+      showToast('전체 데이터가 초기화되었습니다');
+    });
   });
 
   document.getElementById('resetChangePwToggle').addEventListener('click', function(){
@@ -840,7 +899,7 @@
   });
 
   document.getElementById('changePwSaveBtn').addEventListener('click', function(){
-    if(resetPwInput.value !== getPassword()){
+    if(!API_URL && resetPwInput.value !== getPassword()){
       showToast('현재 비밀번호가 일치하지 않습니다');
       return;
     }
@@ -854,11 +913,17 @@
       showToast('새 비밀번호가 일치하지 않습니다');
       return;
     }
-    setPassword(np);
-    document.getElementById('resetPwHint').textContent = '힌트: ' + passwordHint(np);
-    document.getElementById('newPwInput').value = '';
-    document.getElementById('newPwConfirmInput').value = '';
-    showToast('비밀번호가 변경되었습니다');
+    callServer('changePassword', { newPassword: np }, resetPwInput.value, function(res){
+      if(res && !res.ok){
+        showToast('비밀번호 변경에 실패했습니다: ' + (res.error || '알 수 없는 오류'));
+        return;
+      }
+      setPassword(np);
+      document.getElementById('resetPwHint').textContent = '힌트: ' + passwordHint(np);
+      document.getElementById('newPwInput').value = '';
+      document.getElementById('newPwConfirmInput').value = '';
+      showToast('비밀번호가 변경되었습니다');
+    });
   });
 
   function legacyCopyText(text){
@@ -1028,7 +1093,7 @@
     delete state.assignedMap[studentId];
   }
 
-  function assignStudent(grade, studentId, target, role){
+  function assignStudentLocal(grade, studentId, target, role){
     removeStudentFromAllSlots(grade, studentId);
     var gd = ensureGradeState(grade);
     if(target === 'individual'){
@@ -1040,7 +1105,24 @@
       team.roles[role].push(studentId);
       state.assignedMap[studentId] = { grade: grade, target: target, role: role };
     }
-    saveState();
+  }
+
+  function assignStudent(grade, studentId, target, role, onDone){
+    callServer('assignStudent', { grade: grade, studentId: studentId, target: target, role: role }, null, function(res){
+      if(res && res.ok && res.state) state = res.state;
+      else assignStudentLocal(grade, studentId, target, role);
+      saveState();
+      onDone();
+    });
+  }
+
+  function unassignStudent(grade, studentId, onDone){
+    callServer('removeStudent', { grade: grade, studentId: studentId }, null, function(res){
+      if(res && res.ok && res.state) state = res.state;
+      else removeStudentFromAllSlots(grade, studentId);
+      saveState();
+      onDone();
+    });
   }
 
   function renderTeamTab(){
@@ -1082,38 +1164,40 @@
       return;
     }
 
-    if(newCount > oldCount){
-      for(var i = oldCount + 1; i <= newCount; i++){
-        gd.teams.push({ id: 't' + i, name: i + '팀', roles: { '기획': [], '아트': [], '개발': [] } });
-      }
-      gd.teamCount = newCount;
-      saveState();
-      renderTeamBoard();
-      showToast('팀이 ' + (newCount - oldCount) + '개 추가되었습니다 (총 ' + newCount + '개)');
-      return;
-    }
-
     // newCount < oldCount: 뒤쪽 팀부터 제거. 제거될 팀에 배정된 학생이 있으면 확인 후 미배정으로 되돌림
-    var removedTeams = gd.teams.slice(newCount);
-    var hasMembers = removedTeams.some(function(t){
-      return ROLES.some(function(role){ return (t.roles[role] || []).length > 0; });
-    });
-    if(hasMembers){
-      if(!window.confirm('팀 개수를 줄이면 뒤쪽 팀에 배정된 학생이 미배정으로 돌아갑니다. 계속할까요?')){
+    if(newCount < oldCount){
+      var hasMembers = gd.teams.slice(newCount).some(function(t){
+        return ROLES.some(function(role){ return (t.roles[role] || []).length > 0; });
+      });
+      if(hasMembers && !window.confirm('팀 개수를 줄이면 뒤쪽 팀에 배정된 학생이 미배정으로 돌아갑니다. 계속할까요?')){
         input.value = oldCount;
         return;
       }
     }
-    removedTeams.forEach(function(t){
-      ROLES.forEach(function(role){
-        (t.roles[role] || []).forEach(function(sid){ delete state.assignedMap[sid]; });
-      });
+
+    callServer('setTeamCount', { grade: grade, count: newCount }, null, function(res){
+      if(res && res.ok && res.state){
+        state = res.state;
+      } else if(newCount > oldCount){
+        for(var i = oldCount + 1; i <= newCount; i++){
+          gd.teams.push({ id: 't' + i, name: i + '팀', roles: { '기획': [], '아트': [], '개발': [] } });
+        }
+        gd.teamCount = newCount;
+      } else {
+        gd.teams.slice(newCount).forEach(function(t){
+          ROLES.forEach(function(role){
+            (t.roles[role] || []).forEach(function(sid){ delete state.assignedMap[sid]; });
+          });
+        });
+        gd.teams = gd.teams.slice(0, newCount);
+        gd.teamCount = newCount;
+      }
+      saveState();
+      renderTeamBoard();
+      showToast(newCount > oldCount
+        ? '팀이 ' + (newCount - oldCount) + '개 추가되었습니다 (총 ' + newCount + '개)'
+        : '팀이 ' + newCount + '개로 줄었습니다');
     });
-    gd.teams = gd.teams.slice(0, newCount);
-    gd.teamCount = newCount;
-    saveState();
-    renderTeamBoard();
-    showToast('팀이 ' + newCount + '개로 줄었습니다');
   });
 
   document.getElementById('clearGradeBtn').addEventListener('click', function(){
@@ -1123,10 +1207,13 @@
       return;
     }
     if(!window.confirm(grade + '학년의 모든 팀 배정을 초기화하시겠습니까?')) return;
-    clearGradeAssignments(grade);
-    saveState();
-    renderTeamBoard();
-    showToast('초기화되었습니다');
+    callServer('clearGrade', { grade: grade }, null, function(res){
+      if(res && res.ok && res.state) state = res.state;
+      else clearGradeAssignments(grade);
+      saveState();
+      renderTeamBoard();
+      showToast('초기화되었습니다');
+    });
   });
 
   function studentById(sid){
@@ -1210,14 +1297,11 @@
         var s = studentById(sid);
         if(!s) return;
         indivZone.appendChild(makeChip(s, true, function(){
-          removeStudentFromAllSlots(grade, sid);
-          saveState();
-          renderTeamBoard();
+          unassignStudent(grade, sid, renderTeamBoard);
         }));
       });
       wireDropZone(indivZone, function(sid){
-        assignStudent(grade, sid, 'individual', null);
-        renderTeamBoard();
+        assignStudent(grade, sid, 'individual', null, renderTeamBoard);
       });
       indivCard.appendChild(indivZone);
     }
@@ -1248,15 +1332,12 @@
           var s = studentById(sid);
           if(!s) return;
           zone.appendChild(makeChip(s, true, function(){
-            removeStudentFromAllSlots(grade, sid);
-            saveState();
-            renderTeamBoard();
+            unassignStudent(grade, sid, renderTeamBoard);
           }));
         });
         (function(teamId, roleName){
           wireDropZone(zone, function(sid){
-            assignStudent(grade, sid, teamId, roleName);
-            renderTeamBoard();
+            assignStudent(grade, sid, teamId, roleName, renderTeamBoard);
           });
         })(team.id, role);
         col.appendChild(zone);
@@ -1454,10 +1535,13 @@
           showToast('모든 팀원에게 점수를 선택해 주세요');
           return;
         }
-        state.evaluations[student.studentId] = scores;
-        saveState();
-        showToast('평가가 저장되었습니다');
-        showEvalLookupView();
+        callServer('submitEvaluation', { studentId: student.studentId, scores: scores }, null, function(res){
+          if(res && res.ok && res.state) state = res.state;
+          else state.evaluations[student.studentId] = scores;
+          saveState();
+          showToast('평가가 저장되었습니다');
+          showEvalLookupView();
+        });
       });
       actions.appendChild(backBtn2);
       actions.appendChild(saveBtn);
@@ -1500,12 +1584,19 @@
 
   document.getElementById('resultsUnlockBtn').addEventListener('click', function(){
     var pw = document.getElementById('resultsPwInput').value;
-    if(pw !== getPassword()){
+    if(!API_URL && pw !== getPassword()){
       showToast('비밀번호가 일치하지 않습니다');
       return;
     }
-    resultsUnlocked = true;
-    renderResultsTab();
+    callServer('verifyPassword', {}, pw, function(res){
+      if(res && !res.ok){
+        showToast('비밀번호가 일치하지 않습니다');
+        return;
+      }
+      if(res && res.state) state = res.state;
+      resultsUnlocked = true;
+      renderResultsTab();
+    });
   });
 
   document.getElementById('resultsGradeFilter').addEventListener('click', function(e){
@@ -1576,6 +1667,7 @@
   renderUploadSummary();
   renderRosterTable();
   renderTeamTab();
+  syncFromServer();
 })();
 </script>
 </body>
