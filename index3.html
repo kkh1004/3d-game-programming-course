@@ -86,8 +86,10 @@
     background:linear-gradient(135deg,var(--a2),var(--a1));
     border:none;border-radius:11px;padding:12px 22px;cursor:pointer;
   }
+  .upload-lock-note{display:inline-block;margin-top:6px;font-size:12.5px;color:var(--dim)}
+  .roster-section{margin-bottom:28px}
   .upload-summary{
-    margin-top:18px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+    display:flex;flex-wrap:wrap;gap:10px;align-items:center;
     font-size:13.5px;color:var(--muted);
   }
   .upload-summary b{color:var(--text)}
@@ -327,27 +329,31 @@
   <section class="panel">
 
     <div class="tab-view active" id="tab-upload">
+      <!-- 등록된 명단이 있으면 업로드 영역보다 위에 표시된다 -->
+      <div class="roster-section" id="rosterSection" style="display:none">
+        <div class="upload-summary" id="uploadSummary"></div>
+
+        <div class="grade-filter" id="rosterGradeFilter">
+          <button type="button" class="grade-chip active" data-grade="all">전체</button>
+          <button type="button" class="grade-chip" data-grade="1">1학년</button>
+          <button type="button" class="grade-chip" data-grade="2">2학년</button>
+          <button type="button" class="grade-chip" data-grade="3">3학년</button>
+        </div>
+
+        <div class="roster-table-wrap" id="rosterTableWrap">
+          <div class="roster-scroll">
+            <table class="roster-table">
+              <thead><tr><th>학년</th><th>반</th><th>학번</th><th>이름</th></tr></thead>
+              <tbody id="rosterTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <div class="upload-zone" id="uploadZone">
-        <p>학년-반 시트로 구성된 재학생 명단 엑셀(.xlsx)을 끌어다 놓거나 선택하세요.<br>(No / 학적반 / 수업반 / 학번 / 이름 형식의 시트를 인식합니다)</p>
+        <p>학년-반 시트로 구성된 재학생 명단 엑셀(.xlsx)을 끌어다 놓거나 선택하세요.<br>(No / 학적반 / 수업반 / 학번 / 이름 형식의 시트를 인식합니다)<br><span class="upload-lock-note">🔒 업로드하려면 비밀번호가 필요합니다</span></p>
         <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none">
         <button type="button" class="upload-btn" id="fileSelectBtn">엑셀 파일 선택</button>
-      </div>
-      <div class="upload-summary" id="uploadSummary" style="display:none"></div>
-
-      <div class="grade-filter" id="rosterGradeFilter" style="display:none">
-        <button type="button" class="grade-chip active" data-grade="all">전체</button>
-        <button type="button" class="grade-chip" data-grade="1">1학년</button>
-        <button type="button" class="grade-chip" data-grade="2">2학년</button>
-        <button type="button" class="grade-chip" data-grade="3">3학년</button>
-      </div>
-
-      <div class="roster-table-wrap" id="rosterTableWrap" style="display:none">
-        <div class="roster-scroll">
-          <table class="roster-table">
-            <thead><tr><th>학년</th><th>반</th><th>학번</th><th>이름</th></tr></thead>
-            <tbody id="rosterTbody"></tbody>
-          </table>
-        </div>
       </div>
       <div class="empty-state" id="rosterEmptyState">아직 업로드된 명단이 없습니다.</div>
 
@@ -490,6 +496,24 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="pwPromptOverlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="pwPromptTitle">비밀번호 확인</h3>
+      <button type="button" class="modal-close" id="pwPromptClose">×</button>
+    </div>
+    <p class="eval-hint" id="pwPromptDesc"></p>
+    <div class="field-row">
+      <input type="password" id="pwPromptInput" class="input-field" placeholder="비밀번호">
+    </div>
+    <div class="pw-hint-text" id="pwPromptHint"></div>
+    <div class="modal-actions">
+      <button type="button" class="apply-btn" id="pwPromptOkBtn">확인</button>
+      <button type="button" class="ghost-btn" id="pwPromptCancelBtn">취소</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="uploadModeModalOverlay" style="display:none">
   <div class="modal-box">
     <div class="modal-header">
@@ -565,22 +589,137 @@
       });
   }
 
+  /* ============================================================
+   * 서버 상태 동기화 — 최초 1회 + 주기적 폴링으로 다른 사람의
+   * 팀 배정/평가 변경을 실시간에 가깝게 반영한다.
+   * ============================================================ */
+  var POLL_INTERVAL_MS = 5000;
+  var HIDDEN_POLL_FACTOR = 4;   // 화면이 가려져 있을 땐 20초에 한 번만
+  var lastStateJson = '';
+
+  // 모달이 열려 있거나 평가 입력 중이면 화면을 새로 그리지 않는다
+  // (작성 중인 내용이 날아가는 것을 막기 위함)
+  function uiBusy(){
+    var ids = ['resetModalOverlay', 'uploadModeModalOverlay', 'resultDetailModalOverlay', 'pwPromptOverlay'];
+    for(var i = 0; i < ids.length; i++){
+      var el = document.getElementById(ids[i]);
+      if(el && el.style.display !== 'none') return true;
+    }
+    var ratingView = document.getElementById('evalRatingView');
+    if(ratingView && ratingView.style.display !== 'none') return true;
+    return false;
+  }
+
+  function applyServerState(newState){
+    state = newState;
+    if(!state.evaluations) state.evaluations = {};
+    saveState();
+    lastStateJson = JSON.stringify(state);
+    renderUploadSummary();
+    renderRosterTable();
+    var activeBtn = document.querySelector('.top-tab-btn.active');
+    var tab = activeBtn ? activeBtn.dataset.tab : 'upload';
+    if(tab === 'team') renderTeamTab();
+    else if(tab === 'eval') renderEvalTab();
+    else if(tab === 'results') renderResultsTab();
+  }
+
+  // 서버 응답으로 state를 교체한 뒤 폴링이 같은 내용을 다시 그리지 않도록 기록
+  function markStateSynced(){
+    lastStateJson = JSON.stringify(state);
+  }
+
   function syncFromServer(){
     if(!API_URL) return;
     fetch(API_URL + '?action=state')
       .then(function(r){ return r.json(); })
       .then(function(res){
         if(!res || !res.ok || !res.state) return;
-        state = res.state;
-        if(!state.evaluations) state.evaluations = {};
-        saveState();
-        renderUploadSummary();
-        renderRosterTable();
-        renderTeamTab();
-        if(resultsUnlocked) renderResultsTab();
+        applyServerState(res.state);
       })
       .catch(function(){});
   }
+
+  // 화면이 가려져 있으면(다른 탭 등) 요청 횟수를 줄이되 완전히 멈추지는 않는다
+  var pollTick = 0;
+  function pollServer(){
+    if(!API_URL) return;
+    pollTick++;
+    if(document.hidden && (pollTick % HIDDEN_POLL_FACTOR) !== 0) return;
+    if(uiBusy()) return;
+    fetch(API_URL + '?action=state')
+      .then(function(r){ return r.json(); })
+      .then(function(res){
+        if(!res || !res.ok || !res.state) return;
+        var json = JSON.stringify(res.state);
+        if(json === lastStateJson) return;   // 변경 없음 → 다시 그리지 않음
+        if(uiBusy()) return;                 // 응답 도착 사이에 모달이 열렸을 수 있음
+        applyServerState(res.state);
+      })
+      .catch(function(){});
+  }
+
+  /* ============================================================
+   * 공용 비밀번호 확인 — 명단 업로드 / 학년 배정 초기화처럼
+   * 담당 교수만 실행할 수 있어야 하는 동작 앞에 건다.
+   * 확인되면 onOk(비밀번호)를 호출한다.
+   * ============================================================ */
+  var pwPromptOnOk = null;
+
+  /* 비밀번호 확인은 서버가 최종 기준이다. 다른 PC에서 비밀번호를 바꿨을 수
+   * 있으므로 localStorage 값만 믿고 막지 않는다. 서버에 닿지 못할 때만
+   * 로컬 값으로 대신 확인한다. onResult(true|false)를 호출한다. */
+  function checkPassword(pw, onResult){
+    if(!pw){ onResult(false); return; }
+    if(!API_URL){ onResult(pw === getPassword()); return; }
+    callServer('verifyPassword', {}, pw, function(res){
+      if(res) onResult(!!res.ok);
+      else onResult(pw === getPassword());   // 서버 연결 실패 → 로컬 비밀번호로 확인
+    });
+  }
+
+  function requirePassword(title, desc, onOk){
+    pwPromptOnOk = onOk;
+    document.getElementById('pwPromptTitle').textContent = title;
+    document.getElementById('pwPromptDesc').textContent = desc;
+    document.getElementById('pwPromptInput').value = '';
+    document.getElementById('pwPromptHint').textContent = '힌트: ' + passwordHint(getPassword());
+    document.getElementById('pwPromptOverlay').style.display = 'flex';
+    document.getElementById('pwPromptInput').focus();
+  }
+
+  function closePwPrompt(){
+    document.getElementById('pwPromptOverlay').style.display = 'none';
+    document.getElementById('pwPromptInput').value = '';
+    pwPromptOnOk = null;
+  }
+
+  function submitPwPrompt(){
+    var pw = document.getElementById('pwPromptInput').value;
+    if(!pw){
+      showToast('비밀번호를 입력해 주세요');
+      return;
+    }
+    var onOk = pwPromptOnOk;
+    checkPassword(pw, function(ok){
+      if(!ok){
+        showToast('비밀번호가 일치하지 않습니다');
+        return;
+      }
+      closePwPrompt();
+      if(onOk) onOk(pw);
+    });
+  }
+
+  document.getElementById('pwPromptOkBtn').addEventListener('click', submitPwPrompt);
+  document.getElementById('pwPromptCancelBtn').addEventListener('click', closePwPrompt);
+  document.getElementById('pwPromptClose').addEventListener('click', closePwPrompt);
+  document.getElementById('pwPromptInput').addEventListener('keydown', function(e){
+    if(e.key === 'Enter') submitPwPrompt();
+  });
+  document.getElementById('pwPromptOverlay').addEventListener('click', function(e){
+    if(e.target === this) closePwPrompt();
+  });
 
   function canonicalRatingPairs(teamsByGrade){
     var pairs = [];
@@ -735,7 +874,16 @@
   var fileInput = document.getElementById('fileInput');
   var fileSelectBtn = document.getElementById('fileSelectBtn');
 
-  fileSelectBtn.addEventListener('click', function(){ fileInput.click(); });
+  // 업로드는 담당 교수만 할 수 있도록 비밀번호를 먼저 확인한다.
+  // 확인된 비밀번호는 서버 요청에도 그대로 실어 보낸다.
+  var uploadPassword = null;
+
+  fileSelectBtn.addEventListener('click', function(){
+    requirePassword('명단 업로드', '명단을 업로드하려면 비밀번호를 입력하세요.', function(pw){
+      uploadPassword = pw;
+      fileInput.click();
+    });
+  });
   fileInput.addEventListener('change', function(){
     if(fileInput.files && fileInput.files[0]) handleFile(fileInput.files[0]);
   });
@@ -747,7 +895,11 @@
   });
   uploadZone.addEventListener('drop', function(e){
     var f = e.dataTransfer.files && e.dataTransfer.files[0];
-    if(f) handleFile(f);
+    if(!f) return;
+    requirePassword('명단 업로드', '명단을 업로드하려면 비밀번호를 입력하세요.', function(pw){
+      uploadPassword = pw;
+      handleFile(f);
+    });
   });
 
   var pendingUploadRoster = null;
@@ -781,14 +933,19 @@
 
   function afterRosterChange(){
     saveState();
+    markStateSynced();
     renderUploadSummary();
     renderRosterTable();
     renderTeamTab();
   }
 
   function applyNewRoster(roster){
-    callServer('uploadRoster', { roster: roster }, null, function(res){
-      if(res && res.ok && res.state){
+    callServer('uploadRoster', { roster: roster }, uploadPassword, function(res){
+      if(res && !res.ok){
+        showToast('업로드에 실패했습니다: ' + (res.error === 'wrong password' ? '비밀번호가 일치하지 않습니다' : (res.error || '알 수 없는 오류')));
+        return;
+      }
+      if(res && res.state){
         state = res.state;
       } else {
         state.roster = roster;
@@ -812,8 +969,12 @@
     var addedCount = 0;
     newRoster.forEach(function(s){ if(!oldIds[s.studentId]) addedCount++; });
 
-    callServer('mergeRoster', { roster: newRoster }, null, function(res){
-      if(res && res.ok && res.state){
+    callServer('mergeRoster', { roster: newRoster }, uploadPassword, function(res){
+      if(res && !res.ok){
+        showToast('갱신에 실패했습니다: ' + (res.error === 'wrong password' ? '비밀번호가 일치하지 않습니다' : (res.error || '알 수 없는 오류')));
+        return;
+      }
+      if(res && res.state){
         state = res.state;
       } else {
         state.roster.forEach(function(s){
@@ -868,28 +1029,35 @@
   resetModalOverlay.addEventListener('click', function(e){ if(e.target === resetModalOverlay) closeResetModal(); });
 
   document.getElementById('resetConfirmBtn').addEventListener('click', function(){
-    if(!API_URL && resetPwInput.value !== getPassword()){
-      showToast('비밀번호가 일치하지 않습니다');
+    var pw = resetPwInput.value;
+    if(!pw){
+      showToast('비밀번호를 입력해 주세요');
       return;
     }
-    if(!window.confirm('정말로 전체 데이터를 초기화하시겠습니까? 되돌릴 수 없습니다.')) return;
-    callServer('resetAll', {}, resetPwInput.value, function(res){
-      if(res && !res.ok){
-        showToast('초기화에 실패했습니다: ' + (res.error || '알 수 없는 오류'));
+    checkPassword(pw, function(ok){
+      if(!ok){
+        showToast('비밀번호가 일치하지 않습니다');
         return;
       }
-      if(res && res.state){
-        state = res.state;
-      } else {
-        state.roster = [];
-        state.teamsByGrade = {};
-        state.assignedMap = {};
-        state.evaluations = {};
-      }
-      closeResetModal();
-      afterRosterChange();
-      resultsUnlocked = false;
-      showToast('전체 데이터가 초기화되었습니다');
+      if(!window.confirm('정말로 전체 데이터를 초기화하시겠습니까? 되돌릴 수 없습니다.')) return;
+      callServer('resetAll', {}, pw, function(res){
+        if(res && !res.ok){
+          showToast('초기화에 실패했습니다: ' + (res.error === 'wrong password' ? '비밀번호가 일치하지 않습니다' : (res.error || '알 수 없는 오류')));
+          return;
+        }
+        if(res && res.state){
+          state = res.state;
+        } else {
+          state.roster = [];
+          state.teamsByGrade = {};
+          state.assignedMap = {};
+          state.evaluations = {};
+        }
+        closeResetModal();
+        afterRosterChange();
+        resultsUnlocked = false;
+        showToast('전체 데이터가 초기화되었습니다');
+      });
     });
   });
 
@@ -899,30 +1067,50 @@
   });
 
   document.getElementById('changePwSaveBtn').addEventListener('click', function(){
-    if(!API_URL && resetPwInput.value !== getPassword()){
-      showToast('현재 비밀번호가 일치하지 않습니다');
-      return;
-    }
+    var cur = resetPwInput.value;
     var np = document.getElementById('newPwInput').value;
     var npc = document.getElementById('newPwConfirmInput').value;
+
+    if(!cur){
+      showToast('현재 비밀번호를 입력해 주세요');
+      return;
+    }
     if(!np){
       showToast('새 비밀번호를 입력해 주세요');
       return;
     }
-    if(np !== npc){
-      showToast('새 비밀번호가 일치하지 않습니다');
+    if(!npc){
+      showToast('새 비밀번호 확인을 입력해 주세요');
       return;
     }
-    callServer('changePassword', { newPassword: np }, resetPwInput.value, function(res){
-      if(res && !res.ok){
-        showToast('비밀번호 변경에 실패했습니다: ' + (res.error || '알 수 없는 오류'));
+    if(np !== npc){
+      showToast('새 비밀번호와 확인이 서로 다릅니다');
+      return;
+    }
+    if(np === cur){
+      showToast('기존 비밀번호와 동일합니다. 다른 비밀번호를 입력해 주세요');
+      return;
+    }
+
+    checkPassword(cur, function(ok){
+      if(!ok){
+        showToast('현재 비밀번호가 일치하지 않습니다');
         return;
       }
-      setPassword(np);
-      document.getElementById('resetPwHint').textContent = '힌트: ' + passwordHint(np);
-      document.getElementById('newPwInput').value = '';
-      document.getElementById('newPwConfirmInput').value = '';
-      showToast('비밀번호가 변경되었습니다');
+      callServer('changePassword', { newPassword: np }, cur, function(res){
+        if(res && !res.ok){
+          showToast('비밀번호 변경에 실패했습니다: ' + (res.error === 'wrong password' ? '현재 비밀번호가 일치하지 않습니다' : (res.error || '알 수 없는 오류')));
+          return;
+        }
+        setPassword(np);
+        document.getElementById('resetPwHint').textContent = '힌트: ' + passwordHint(np);
+        document.getElementById('newPwInput').value = '';
+        document.getElementById('newPwConfirmInput').value = '';
+        resetPwInput.value = '';
+        // 변경이 끝났으므로 비밀번호 변경 메뉴는 다시 숨긴다
+        document.getElementById('changePwSection').style.display = 'none';
+        showToast('비밀번호가 ' + passwordHint(np) + ' (으)로 변경되었습니다');
+      });
     });
   });
 
@@ -941,22 +1129,28 @@
   }
 
   document.getElementById('exportStateBtn').addEventListener('click', function(){
-    if(resetPwInput.value !== getPassword()){
-      showToast('비밀번호가 일치하지 않습니다');
+    if(!resetPwInput.value){
+      showToast('비밀번호를 입력해 주세요');
       return;
     }
     if(!state.roster.length){
       showToast('내보낼 명단이 없습니다');
       return;
     }
-    var snapshot = {
-      roster: state.roster,
-      teamsByGrade: state.teamsByGrade,
-      evalCode: encodeEvaluations()
-    };
-    document.getElementById('exportOutput').value = 'var SEED_STATE = ' + JSON.stringify(snapshot) + ';';
-    var section = document.getElementById('exportSection');
-    section.style.display = section.style.display === 'none' ? 'block' : 'none';
+    checkPassword(resetPwInput.value, function(ok){
+      if(!ok){
+        showToast('비밀번호가 일치하지 않습니다');
+        return;
+      }
+      var snapshot = {
+        roster: state.roster,
+        teamsByGrade: state.teamsByGrade,
+        evalCode: encodeEvaluations()
+      };
+      document.getElementById('exportOutput').value = 'var SEED_STATE = ' + JSON.stringify(snapshot) + ';';
+      var section = document.getElementById('exportSection');
+      section.style.display = section.style.display === 'none' ? 'block' : 'none';
+    });
   });
 
   document.getElementById('exportCopyBtn').addEventListener('click', function(){
@@ -974,13 +1168,10 @@
 
   function renderUploadSummary(){
     var summaryEl = document.getElementById('uploadSummary');
-    var gradeFilterEl = document.getElementById('rosterGradeFilter');
-    var tableWrapEl = document.getElementById('rosterTableWrap');
+    var sectionEl = document.getElementById('rosterSection');
     var emptyEl = document.getElementById('rosterEmptyState');
     if(!state.roster.length){
-      summaryEl.style.display = 'none';
-      gradeFilterEl.style.display = 'none';
-      tableWrapEl.style.display = 'none';
+      sectionEl.style.display = 'none';
       emptyEl.style.display = 'block';
       return;
     }
@@ -991,9 +1182,7 @@
       '<span class="count-badge">1학년 <b>' + counts['1'] + '</b>명</span>' +
       '<span class="count-badge">2학년 <b>' + counts['2'] + '</b>명</span>' +
       '<span class="count-badge">3학년 <b>' + counts['3'] + '</b>명</span>';
-    summaryEl.style.display = 'flex';
-    gradeFilterEl.style.display = 'flex';
-    tableWrapEl.style.display = 'block';
+    sectionEl.style.display = 'block';
     emptyEl.style.display = 'none';
   }
 
@@ -1112,6 +1301,7 @@
       if(res && res.ok && res.state) state = res.state;
       else assignStudentLocal(grade, studentId, target, role);
       saveState();
+      markStateSynced();
       onDone();
     });
   }
@@ -1121,6 +1311,7 @@
       if(res && res.ok && res.state) state = res.state;
       else removeStudentFromAllSlots(grade, studentId);
       saveState();
+      markStateSynced();
       onDone();
     });
   }
@@ -1193,6 +1384,7 @@
         gd.teamCount = newCount;
       }
       saveState();
+      markStateSynced();
       renderTeamBoard();
       showToast(newCount > oldCount
         ? '팀이 ' + (newCount - oldCount) + '개 추가되었습니다 (총 ' + newCount + '개)'
@@ -1206,13 +1398,20 @@
       showToast('이미 배정된 학생이 없습니다');
       return;
     }
-    if(!window.confirm(grade + '학년의 모든 팀 배정을 초기화하시겠습니까?')) return;
-    callServer('clearGrade', { grade: grade }, null, function(res){
-      if(res && res.ok && res.state) state = res.state;
-      else clearGradeAssignments(grade);
-      saveState();
-      renderTeamBoard();
-      showToast('초기화되었습니다');
+    requirePassword(grade + '학년 배정 초기화', grade + '학년의 모든 팀 배정을 초기화하려면 비밀번호를 입력하세요.', function(pw){
+      if(!window.confirm(grade + '학년의 모든 팀 배정을 초기화하시겠습니까?')) return;
+      callServer('clearGrade', { grade: grade }, pw, function(res){
+        if(res && !res.ok){
+          showToast('초기화에 실패했습니다: ' + (res.error === 'wrong password' ? '비밀번호가 일치하지 않습니다' : (res.error || '알 수 없는 오류')));
+          return;
+        }
+        if(res && res.state) state = res.state;
+        else clearGradeAssignments(grade);
+        saveState();
+        markStateSynced();
+        renderTeamBoard();
+        showToast(grade + '학년 배정이 초기화되었습니다');
+      });
     });
   });
 
@@ -1539,6 +1738,7 @@
           if(res && res.ok && res.state) state = res.state;
           else state.evaluations[student.studentId] = scores;
           saveState();
+          markStateSynced();
           showToast('평가가 저장되었습니다');
           showEvalLookupView();
         });
@@ -1584,16 +1784,15 @@
 
   document.getElementById('resultsUnlockBtn').addEventListener('click', function(){
     var pw = document.getElementById('resultsPwInput').value;
-    if(!API_URL && pw !== getPassword()){
-      showToast('비밀번호가 일치하지 않습니다');
+    if(!pw){
+      showToast('비밀번호를 입력해 주세요');
       return;
     }
-    callServer('verifyPassword', {}, pw, function(res){
-      if(res && !res.ok){
+    checkPassword(pw, function(ok){
+      if(!ok){
         showToast('비밀번호가 일치하지 않습니다');
         return;
       }
-      if(res && res.state) state = res.state;
       resultsUnlocked = true;
       renderResultsTab();
     });
@@ -1668,6 +1867,16 @@
   renderRosterTable();
   renderTeamTab();
   syncFromServer();
+
+  /* 다른 사람이 바꾼 팀 배정·평가를 주기적으로 받아온다.
+   * 탭이 백그라운드일 때는 쉬고, 다시 보일 때 즉시 한 번 확인한다. */
+  if(API_URL){
+    setInterval(pollServer, POLL_INTERVAL_MS);
+    document.addEventListener('visibilitychange', function(){
+      if(!document.hidden) pollServer();
+    });
+    window.addEventListener('focus', pollServer);
+  }
 })();
 </script>
 </body>

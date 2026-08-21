@@ -131,7 +131,10 @@ function applyAction(store, action, payload, password) {
   var state = store.state;
 
   switch (action) {
+    // 명단 업로드 / 학년 배정 초기화 / 전체 리셋 / 비밀번호 변경은 담당 교수 전용.
+    // 팀 배정과 기여도 평가는 학생이 직접 하므로 비밀번호를 요구하지 않는다.
     case 'uploadRoster':
+      if (password !== store.password) return { ok: false, error: 'wrong password' };
       if (!payload.roster || !payload.roster.length) return { ok: false, error: 'empty roster' };
       state.roster = payload.roster;
       state.teamsByGrade = {};
@@ -140,6 +143,7 @@ function applyAction(store, action, payload, password) {
       return { ok: true, message: 'roster replaced' };
 
     case 'mergeRoster': {
+      if (password !== store.password) return { ok: false, error: 'wrong password' };
       if (!payload.roster || !payload.roster.length) return { ok: false, error: 'empty roster' };
       var newIds = {};
       payload.roster.forEach(function (s) { newIds[s.studentId] = true; });
@@ -195,6 +199,7 @@ function applyAction(store, action, payload, password) {
     }
 
     case 'clearGrade': {
+      if (password !== store.password) return { ok: false, error: 'wrong password' };
       var g2 = String(payload.grade);
       var gd3 = state.teamsByGrade[g2];
       if (gd3) {
