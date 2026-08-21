@@ -1698,16 +1698,18 @@
       showToast('내보낼 ' + grade + '학년 자료가 없습니다');
       return;
     }
-    try {
-      var ws = XLSX.utils.aoa_to_sheet(rows);
-      ws['!cols'] = [{ wch: 12 }, { wch: 18 }, { wch: 8 }, { wch: 13 }, { wch: 10 }, { wch: 9 }];
-      var wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, grade + '학년');
-      XLSX.writeFile(wb, grade + '학년_팀배정_' + todayStamp() + '.xlsx');
-      showToast(grade + '학년 팀 배정을 엑셀로 저장했습니다 (' + (rows.length - 1) + '명)');
-    } catch(e){
-      showToast('엑셀 저장에 실패했습니다');
-    }
+    requirePassword(grade + '학년 배정 내보내기', '엑셀 파일로 내려받으려면 비밀번호를 입력하세요.', function(){
+      try {
+        var ws = XLSX.utils.aoa_to_sheet(rows);
+        ws['!cols'] = [{ wch: 12 }, { wch: 18 }, { wch: 8 }, { wch: 13 }, { wch: 10 }, { wch: 9 }];
+        var wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, grade + '학년');
+        XLSX.writeFile(wb, grade + '학년_팀배정_' + todayStamp() + '.xlsx');
+        showToast(grade + '학년 팀 배정을 엑셀로 저장했습니다 (' + (rows.length - 1) + '명)');
+      } catch(e){
+        showToast('엑셀 저장에 실패했습니다');
+      }
+    });
   });
 
   document.getElementById('clearGradeBtn').addEventListener('click', function(){
