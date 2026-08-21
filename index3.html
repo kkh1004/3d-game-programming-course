@@ -295,6 +295,48 @@
     display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;
     position:relative;z-index:1;
   }
+  .footer-right{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .footer-link-btn{
+    font-family:inherit;font-size:.85rem;font-weight:650;color:var(--muted);
+    border:1px solid var(--stroke);background:rgba(255,255,255,.04);
+    padding:7px 15px;border-radius:9px;cursor:pointer;transition:.2s;
+  }
+  .footer-link-btn:hover{color:var(--text);border-color:rgba(124,92,255,.5)}
+
+  /* ---------- 평가 열기/닫기 바 ---------- */
+  .eval-toggle-bar{
+    display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;
+    border:1px solid var(--stroke);border-radius:12px;background:rgba(255,255,255,.03);
+    padding:14px 18px;margin-bottom:20px;
+  }
+  .eval-status{font-size:13.5px;font-weight:650;display:flex;align-items:center;gap:8px}
+  .eval-status::before{
+    content:'';width:8px;height:8px;border-radius:50%;background:var(--dim);flex-shrink:0;
+  }
+  .eval-status.is-open{color:#8ef0c8}
+  .eval-status.is-open::before{background:#3ddc97;box-shadow:0 0 10px #3ddc97}
+  .eval-status.is-closed{color:var(--muted)}
+
+  /* ---------- 로딩 표시 ---------- */
+  .loading-badge{
+    position:fixed;left:50%;top:18px;transform:translate(-50%,-14px);
+    display:flex;align-items:center;gap:9px;
+    background:#16161f;border:1px solid rgba(34,211,238,.4);color:var(--text);
+    font-size:13px;font-weight:650;padding:9px 18px;border-radius:100px;
+    box-shadow:0 12px 30px rgba(0,0,0,.45);
+    opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;
+    z-index:120;
+  }
+  .loading-badge.show{opacity:1;transform:translate(-50%,0)}
+  .loading-spinner{
+    width:13px;height:13px;border-radius:50%;flex-shrink:0;
+    border:2px solid rgba(255,255,255,.2);border-top-color:var(--a2);
+    animation:spin .7s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){
+    .loading-spinner{animation-duration:2s}
+  }
 
   @media (max-width:760px){
     .team-body{grid-template-columns:1fr}
@@ -399,6 +441,12 @@
     </div>
 
     <div class="tab-view" id="tab-eval">
+      <!-- 담당 교수가 평가를 열고 닫는 곳. 열려 있는 동안에만 학생이 평가할 수 있다. -->
+      <div class="eval-toggle-bar" id="evalToggleBar" style="display:none">
+        <span class="eval-status" id="evalStatusText"></span>
+        <button type="button" class="ghost-btn" id="evalToggleBtn"></button>
+      </div>
+
       <div id="evalGateState" class="empty-state">먼저 "명단 업로드" 탭에서 엑셀을 업로드해 주세요.</div>
 
       <div id="evalContent" style="display:none">
@@ -452,10 +500,15 @@
 
 <footer class="wrap">
   <span>연성대학교 게임콘텐츠과 · 프로젝트팀 생성기</span>
-  <span>내부 업무용 도구</span>
+  <span class="footer-right">
+    <button type="button" class="footer-link-btn" id="pwSettingsBtn">비번 설정</button>
+    <span>내부 업무용 도구</span>
+  </span>
 </footer>
 
 <div class="toast" id="toast"></div>
+
+<div class="loading-badge" id="loadingBadge"><span class="loading-spinner"></span>데이터 갱신 중…</div>
 
 <div class="modal-overlay" id="resetModalOverlay" style="display:none">
   <div class="modal-box">
@@ -463,19 +516,30 @@
       <h3>전체 리셋</h3>
       <button type="button" class="modal-close" id="resetModalClose">×</button>
     </div>
-    <p class="eval-hint">비밀번호를 입력하면 명단·팀 배정·평가 데이터가 모두 삭제됩니다.</p>
+    <p class="eval-hint">비밀번호를 입력하면 명단·팀 배정·평가 데이터가 모두 삭제됩니다. 되돌릴 수 없습니다.</p>
     <div class="field-row">
       <input type="password" id="resetPwInput" class="input-field" placeholder="비밀번호">
     </div>
-    <div class="pw-hint-text" id="resetPwHint"></div>
     <div class="modal-actions">
       <button type="button" class="apply-btn" id="resetConfirmBtn">전체 리셋 실행</button>
-      <button type="button" class="ghost-btn" id="resetChangePwToggle">비밀번호 변경</button>
-      <button type="button" class="ghost-btn" id="exportStateBtn">현재 상태 내보내기</button>
     </div>
+  </div>
+</div>
 
-    <div class="change-pw-section" id="changePwSection" style="display:none">
+<div class="modal-overlay" id="pwSettingsOverlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>비밀번호 설정</h3>
+      <button type="button" class="modal-close" id="pwSettingsClose">×</button>
+    </div>
+    <p class="eval-hint">명단 업로드·팀 배정 초기화·평가 활성화·전체 리셋에 사용하는 비밀번호입니다.</p>
+    <div class="pw-hint-text" id="pwSettingsHint"></div>
+
+    <div class="change-pw-section">
       <div class="field-row">
+        <input type="password" id="curPwInput" class="input-field" placeholder="현재 비밀번호">
+      </div>
+      <div class="field-row" style="margin-top:8px">
         <input type="password" id="newPwInput" class="input-field" placeholder="새 비밀번호">
       </div>
       <div class="field-row" style="margin-top:8px">
@@ -486,11 +550,14 @@
       </div>
     </div>
 
-    <div class="change-pw-section" id="exportSection" style="display:none">
-      <p class="eval-hint">아래 코드를 복사해서 <code>index3.html</code> 상단의 <code>SEED_STATE</code> 값에 붙여넣고 커밋·푸시하면, 접속하는 모든 사람이 이 상태를 기본으로 보게 됩니다. (점수는 원문이 아니라 팀 구성 순서를 기준으로 인코딩된 숫자로만 저장됩니다)</p>
-      <textarea id="exportOutput" class="input-field" style="width:100%;min-height:160px;font-family:monospace;font-size:11.5px;resize:vertical" readonly></textarea>
-      <div class="modal-actions">
-        <button type="button" class="apply-btn" id="exportCopyBtn">복사</button>
+    <div class="change-pw-section">
+      <button type="button" class="ghost-btn" id="exportStateBtn">고급 · 현재 상태 내보내기</button>
+      <div id="exportSection" style="display:none;margin-top:14px">
+        <p class="eval-hint">서버 없이 쓰던 시절의 백업 기능입니다. 아래 코드를 <code>index3.html</code>의 <code>SEED_STATE</code>에 붙여넣으면 서버가 없어도 이 상태가 기본값으로 보입니다.</p>
+        <textarea id="exportOutput" class="input-field" style="width:100%;min-height:160px;font-family:monospace;font-size:11.5px;resize:vertical" readonly></textarea>
+        <div class="modal-actions">
+          <button type="button" class="apply-btn" id="exportCopyBtn">복사</button>
+        </div>
       </div>
     </div>
   </div>
@@ -574,16 +641,55 @@
    * ============================================================ */
   var API_URL = 'https://script.google.com/macros/s/AKfycbz2AKC1eQVjUF_puuT2xCXaKuAqtxrO6sznlRbKf_EFC1xii1SupEWT52cake8hTTFkIQ/exec';
 
+  /* ---------- 로딩 표시 ---------- *
+   * 서버 요청이 하나라도 진행 중이면 "데이터 갱신 중…" 배지를 띄운다.
+   * 여러 요청이 겹칠 수 있으므로 개수를 세서 마지막 요청이 끝날 때 감춘다. */
+  var busyCount = 0;
+  function setBusy(on){
+    busyCount += on ? 1 : -1;
+    if(busyCount < 0) busyCount = 0;
+    var badge = document.getElementById('loadingBadge');
+    if(badge) badge.classList.toggle('show', busyCount > 0);
+  }
+
+  // 서버가 내려준 비밀번호 힌트. 다른 PC에서 비밀번호를 바꿔도
+  // 모든 화면이 같은(최신) 힌트를 보게 하기 위해 서버 값을 우선 쓴다.
+  var serverHint = null;
+
+  function noteHint(res){
+    if(res && res.hint) serverHint = res.hint;
+  }
+
+  function currentHint(){
+    return serverHint || passwordHint(getPassword());
+  }
+
+  function refreshHintLabels(){
+    var el = document.getElementById('pwSettingsHint');
+    if(el) el.textContent = '현재 비밀번호 힌트: ' + currentHint();
+    var pel = document.getElementById('pwPromptHint');
+    if(pel && document.getElementById('pwPromptOverlay').style.display !== 'none'){
+      pel.textContent = '힌트: ' + currentHint();
+    }
+  }
+
   function callServer(action, payload, password, onDone){
     if(!API_URL){ onDone(null); return; }
+    setBusy(true);
     fetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action: action, payload: payload || {}, password: password })
     })
       .then(function(r){ return r.json(); })
-      .then(function(res){ onDone(res); })
+      .then(function(res){
+        setBusy(false);
+        noteHint(res);
+        refreshHintLabels();
+        onDone(res);
+      })
       .catch(function(){
+        setBusy(false);
         showToast('서버 연결에 실패해 이 브라우저에만 저장합니다');
         onDone(null);
       });
@@ -600,7 +706,7 @@
   // 모달이 열려 있거나 평가 입력 중이면 화면을 새로 그리지 않는다
   // (작성 중인 내용이 날아가는 것을 막기 위함)
   function uiBusy(){
-    var ids = ['resetModalOverlay', 'uploadModeModalOverlay', 'resultDetailModalOverlay', 'pwPromptOverlay'];
+    var ids = ['resetModalOverlay', 'uploadModeModalOverlay', 'resultDetailModalOverlay', 'pwPromptOverlay', 'pwSettingsOverlay'];
     for(var i = 0; i < ids.length; i++){
       var el = document.getElementById(ids[i]);
       if(el && el.style.display !== 'none') return true;
@@ -631,13 +737,17 @@
 
   function syncFromServer(){
     if(!API_URL) return;
+    setBusy(true);
     fetch(API_URL + '?action=state')
       .then(function(r){ return r.json(); })
       .then(function(res){
+        setBusy(false);
         if(!res || !res.ok || !res.state) return;
+        noteHint(res);
+        refreshHintLabels();
         applyServerState(res.state);
       })
-      .catch(function(){});
+      .catch(function(){ setBusy(false); });
   }
 
   // 화면이 가려져 있으면(다른 탭 등) 요청 횟수를 줄이되 완전히 멈추지는 않는다
@@ -651,6 +761,7 @@
       .then(function(r){ return r.json(); })
       .then(function(res){
         if(!res || !res.ok || !res.state) return;
+        noteHint(res);
         var json = JSON.stringify(res.state);
         if(json === lastStateJson) return;   // 변경 없음 → 다시 그리지 않음
         if(uiBusy()) return;                 // 응답 도착 사이에 모달이 열렸을 수 있음
@@ -683,7 +794,7 @@
     document.getElementById('pwPromptTitle').textContent = title;
     document.getElementById('pwPromptDesc').textContent = desc;
     document.getElementById('pwPromptInput').value = '';
-    document.getElementById('pwPromptHint').textContent = '힌트: ' + passwordHint(getPassword());
+    document.getElementById('pwPromptHint').textContent = '힌트: ' + currentHint();
     document.getElementById('pwPromptOverlay').style.display = 'flex';
     document.getElementById('pwPromptInput').focus();
   }
@@ -810,7 +921,7 @@
         evaluations: decodeEvaluations(SEED_STATE.evalCode, teamsByGrade)
       };
     }
-    return { roster: [], teamsByGrade: {}, assignedMap: {}, evaluations: {} };
+    return { roster: [], teamsByGrade: {}, assignedMap: {}, evaluations: {}, evalEnabled: false };
   }
   function saveState(){
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e){}
@@ -952,6 +1063,7 @@
         state.teamsByGrade = {};
         state.assignedMap = {};
         state.evaluations = {};
+        state.evalEnabled = false;
       }
       afterRosterChange();
       showToast(roster.length + '명의 학생 명단을 불러왔습니다');
@@ -1012,13 +1124,8 @@
 
   function openResetModal(){
     resetPwInput.value = '';
-    document.getElementById('newPwInput').value = '';
-    document.getElementById('newPwConfirmInput').value = '';
-    document.getElementById('changePwSection').style.display = 'none';
-    document.getElementById('exportSection').style.display = 'none';
-    document.getElementById('exportOutput').value = '';
-    document.getElementById('resetPwHint').textContent = '힌트: ' + passwordHint(getPassword());
     resetModalOverlay.style.display = 'flex';
+    resetPwInput.focus();
   }
   function closeResetModal(){
     resetModalOverlay.style.display = 'none';
@@ -1052,6 +1159,7 @@
           state.teamsByGrade = {};
           state.assignedMap = {};
           state.evaluations = {};
+          state.evalEnabled = false;
         }
         closeResetModal();
         afterRosterChange();
@@ -1061,13 +1169,32 @@
     });
   });
 
-  document.getElementById('resetChangePwToggle').addEventListener('click', function(){
-    var section = document.getElementById('changePwSection');
-    section.style.display = section.style.display === 'none' ? 'block' : 'none';
+  /* ---------- 비밀번호 설정 (푸터 버튼) ---------- */
+  var pwSettingsOverlay = document.getElementById('pwSettingsOverlay');
+
+  function openPwSettings(){
+    document.getElementById('curPwInput').value = '';
+    document.getElementById('newPwInput').value = '';
+    document.getElementById('newPwConfirmInput').value = '';
+    document.getElementById('exportSection').style.display = 'none';
+    document.getElementById('exportOutput').value = '';
+    refreshHintLabels();
+    pwSettingsOverlay.style.display = 'flex';
+    // 힌트가 오래된 값일 수 있으니 서버에서 최신 값을 다시 받아온다
+    syncFromServer();
+  }
+  function closePwSettings(){
+    pwSettingsOverlay.style.display = 'none';
+  }
+
+  document.getElementById('pwSettingsBtn').addEventListener('click', openPwSettings);
+  document.getElementById('pwSettingsClose').addEventListener('click', closePwSettings);
+  pwSettingsOverlay.addEventListener('click', function(e){
+    if(e.target === pwSettingsOverlay) closePwSettings();
   });
 
   document.getElementById('changePwSaveBtn').addEventListener('click', function(){
-    var cur = resetPwInput.value;
+    var cur = document.getElementById('curPwInput').value;
     var np = document.getElementById('newPwInput').value;
     var npc = document.getElementById('newPwConfirmInput').value;
 
@@ -1103,13 +1230,13 @@
           return;
         }
         setPassword(np);
-        document.getElementById('resetPwHint').textContent = '힌트: ' + passwordHint(np);
+        // 서버가 새 힌트를 내려주지만, 서버 없이 쓰는 경우도 있으므로 직접도 갱신
+        serverHint = (res && res.hint) ? res.hint : passwordHint(np);
+        refreshHintLabels();
+        document.getElementById('curPwInput').value = '';
         document.getElementById('newPwInput').value = '';
         document.getElementById('newPwConfirmInput').value = '';
-        resetPwInput.value = '';
-        // 변경이 끝났으므로 비밀번호 변경 메뉴는 다시 숨긴다
-        document.getElementById('changePwSection').style.display = 'none';
-        showToast('비밀번호가 ' + passwordHint(np) + ' (으)로 변경되었습니다');
+        showToast('비밀번호가 ' + currentHint() + ' (으)로 변경되었습니다');
       });
     });
   });
@@ -1129,15 +1256,21 @@
   }
 
   document.getElementById('exportStateBtn').addEventListener('click', function(){
-    if(!resetPwInput.value){
-      showToast('비밀번호를 입력해 주세요');
+    var section = document.getElementById('exportSection');
+    if(section.style.display !== 'none'){   // 열려 있으면 그냥 닫는다
+      section.style.display = 'none';
       return;
     }
     if(!state.roster.length){
       showToast('내보낼 명단이 없습니다');
       return;
     }
-    checkPassword(resetPwInput.value, function(ok){
+    var cur = document.getElementById('curPwInput').value;
+    if(!cur){
+      showToast('현재 비밀번호를 입력해 주세요');
+      return;
+    }
+    checkPassword(cur, function(ok){
       if(!ok){
         showToast('비밀번호가 일치하지 않습니다');
         return;
@@ -1148,8 +1281,7 @@
         evalCode: encodeEvaluations()
       };
       document.getElementById('exportOutput').value = 'var SEED_STATE = ' + JSON.stringify(snapshot) + ';';
-      var section = document.getElementById('exportSection');
-      section.style.display = section.style.display === 'none' ? 'block' : 'none';
+      section.style.display = 'block';
     });
   });
 
@@ -1562,29 +1694,36 @@
   /* ============================================================
    * 기여도 평가 — 모든 학생이 배정된 뒤에만 이용 가능
    * ============================================================ */
-  function countUnassignedTotal(){
-    return state.roster.filter(function(s){ return !state.assignedMap[s.studentId]; }).length;
+  function evalIsOpen(){
+    return !!state.evalEnabled;
   }
 
+  /* 평가는 담당 교수가 "평가 활성화"를 누른 뒤부터 가능하다.
+   * (예전처럼 모든 학생이 배정되어야 열리는 조건은 없앴다) */
   function renderEvalTab(){
     var gateEl = document.getElementById('evalGateState');
     var contentEl = document.getElementById('evalContent');
+    var bar = document.getElementById('evalToggleBar');
+    var statusEl = document.getElementById('evalStatusText');
+    var toggleBtn = document.getElementById('evalToggleBtn');
+
     if(!state.roster.length){
+      bar.style.display = 'none';
       gateEl.style.display = 'block';
       gateEl.textContent = '먼저 "명단 업로드" 탭에서 엑셀을 업로드해 주세요.';
       contentEl.style.display = 'none';
       return;
     }
-    var unassignedTotal = countUnassignedTotal();
-    if(unassignedTotal > 0){
-      var byGrade = { '1': 0, '2': 0, '3': 0 };
-      state.roster.forEach(function(s){
-        if(!state.assignedMap[s.studentId] && byGrade[s.grade] !== undefined) byGrade[s.grade]++;
-      });
+
+    bar.style.display = 'flex';
+    var open = evalIsOpen();
+    statusEl.className = 'eval-status ' + (open ? 'is-open' : 'is-closed');
+    statusEl.textContent = open ? '기여도 평가가 열려 있습니다' : '기여도 평가가 아직 활성화되지 않았습니다';
+    toggleBtn.textContent = open ? '평가 마감' : '평가 활성화';
+
+    if(!open){
       gateEl.style.display = 'block';
-      gateEl.textContent = '아직 배정되지 않은 학생이 ' + unassignedTotal + '명 있습니다 (1학년 ' + byGrade['1'] +
-        '명, 2학년 ' + byGrade['2'] + '명, 3학년 ' + byGrade['3'] +
-        '명). "팀 배정" 탭에서 모든 학생을 배치한 후 이용할 수 있습니다.';
+      gateEl.textContent = '담당 교수가 평가를 활성화하면 이용할 수 있습니다.';
       contentEl.style.display = 'none';
       return;
     }
@@ -1592,6 +1731,29 @@
     contentEl.style.display = 'block';
     showEvalLookupView();
   }
+
+  document.getElementById('evalToggleBtn').addEventListener('click', function(){
+    var open = evalIsOpen();
+    var title = open ? '평가 마감' : '평가 활성화';
+    var desc = open
+      ? '평가를 마감하면 학생들이 더 이상 점수를 낼 수 없습니다. 비밀번호를 입력하세요.'
+      : '평가를 활성화하면 학생들이 기여도 평가를 할 수 있습니다. 비밀번호를 입력하세요.';
+    requirePassword(title, desc, function(pw){
+      callServer('setEvalEnabled', { enabled: !open }, pw, function(res){
+        if(res && !res.ok){
+          showToast((open ? '마감' : '활성화') + '에 실패했습니다: ' +
+            (res.error === 'wrong password' ? '비밀번호가 일치하지 않습니다' : (res.error || '알 수 없는 오류')));
+          return;
+        }
+        if(res && res.state) state = res.state;
+        else state.evalEnabled = !open;
+        saveState();
+        markStateSynced();
+        renderEvalTab();
+        showToast(open ? '기여도 평가를 마감했습니다' : '기여도 평가를 활성화했습니다');
+      });
+    });
+  });
 
   function showEvalLookupView(){
     document.getElementById('evalLookupView').style.display = 'block';
@@ -1630,7 +1792,11 @@
     if(!info || info.target === 'individual'){
       var head0 = document.createElement('div');
       head0.className = 'eval-rating-head';
-      head0.innerHTML = '<h3>' + escapeHtml(student.name) + '님은 개인프로젝트입니다</h3><p>개인프로젝트는 평가할 팀원이 없습니다.</p>';
+      // 팀 배정이 끝나지 않아도 평가 탭을 열 수 있으므로, 아직 배정 안 된
+      // 학생과 개인프로젝트 학생을 구분해서 안내한다
+      head0.innerHTML = info
+        ? '<h3>' + escapeHtml(student.name) + '님은 개인프로젝트입니다</h3><p>개인프로젝트는 평가할 팀원이 없습니다.</p>'
+        : '<h3>' + escapeHtml(student.name) + '님은 아직 팀에 배정되지 않았습니다</h3><p>담당 교수가 팀 배정을 마친 뒤에 평가할 수 있습니다.</p>';
       card.appendChild(head0);
       var backBtn = document.createElement('button');
       backBtn.type = 'button';
@@ -1735,7 +1901,13 @@
           return;
         }
         callServer('submitEvaluation', { studentId: student.studentId, scores: scores }, null, function(res){
-          if(res && res.ok && res.state) state = res.state;
+          if(res && !res.ok){
+            showToast(res.error === 'evaluation not open'
+              ? '평가가 마감되었습니다'
+              : '저장에 실패했습니다: ' + (res.error || '알 수 없는 오류'));
+            return;
+          }
+          if(res && res.state) state = res.state;
           else state.evaluations[student.studentId] = scores;
           saveState();
           markStateSynced();

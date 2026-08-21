@@ -19,7 +19,21 @@ var SHEET_NAME = 'state';
 var PROP_SHEET_ID = 'teamProjectSheetId';
 
 function emptyState() {
-  return { roster: [], teamsByGrade: {}, assignedMap: {}, evaluations: {} };
+  return { roster: [], teamsByGrade: {}, assignedMap: {}, evaluations: {}, evalEnabled: false };
+}
+
+// 비밀번호 힌트(첫 글자 + * + 끝 글자). 어느 PC에서 접속하든 서버 기준으로
+// 같은 힌트를 보여주기 위해 서버에서 만들어 내려준다.
+function maskPassword(pw) {
+  pw = String(pw || '');
+  if (pw.length <= 2) return pw;
+  return pw.charAt(0) + repeatChar('*', pw.length - 2) + pw.charAt(pw.length - 1);
+}
+
+function repeatChar(ch, n) {
+  var s = '';
+  for (var i = 0; i < n; i++) s += ch;
+  return s;
 }
 
 function getSheet() {
@@ -49,6 +63,7 @@ function readStore() {
   if (!state.teamsByGrade) state.teamsByGrade = {};
   if (!state.assignedMap) state.assignedMap = {};
   if (!state.evaluations) state.evaluations = {};
+  if (typeof state.evalEnabled !== 'boolean') state.evalEnabled = false;
   var pw = sheet.getRange('B1').getValue();
   return { state: state, password: pw ? String(pw) : DEFAULT_PASSWORD };
 }
@@ -66,7 +81,7 @@ function jsonOut(obj) {
 
 function doGet() {
   var store = readStore();
-  return jsonOut({ ok: true, state: store.state });
+  return jsonOut({ ok: true, state: store.state, hint: maskPassword(store.password) });
 }
 
 function doPost(e) {
@@ -89,7 +104,14 @@ function doPost(e) {
     var result = applyAction(store, req.action, req.payload || {}, req.password);
     if (!result.ok) return jsonOut(result);
     writeStore(store.state, result.newPassword);
-    return jsonOut({ ok: true, state: store.state, message: result.message });
+    // 비밀번호가 바뀌었으면 바뀐 값 기준으로 힌트를 내려준다
+    var effectivePw = result.newPassword || store.password;
+    return jsonOut({
+      ok: true,
+      state: store.state,
+      message: result.message,
+      hint: maskPassword(effectivePw)
+    });
   } catch (err) {
     return jsonOut({ ok: false, error: String(err) });
   } finally {
@@ -217,7 +239,14 @@ function applyAction(store, action, payload, password) {
       return { ok: true, message: 'grade cleared' };
     }
 
+    // 평가 활성화/마감은 담당 교수만. 활성화된 동안에만 학생이 평가를 낼 수 있다.
+    case 'setEvalEnabled':
+      if (password !== store.password) return { ok: false, error: 'wrong password' };
+      state.evalEnabled = !!payload.enabled;
+      return { ok: true, message: state.evalEnabled ? 'evaluation opened' : 'evaluation closed' };
+
     case 'submitEvaluation':
+      if (!state.evalEnabled) return { ok: false, error: 'evaluation not open' };
       if (!payload.studentId || !payload.scores) return { ok: false, error: 'bad payload' };
       state.evaluations[payload.studentId] = payload.scores;
       return { ok: true, message: 'evaluation saved' };
