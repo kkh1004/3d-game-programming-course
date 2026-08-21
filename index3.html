@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" type="image/png" href="img/favicon.png">
-<title>프로젝트팀 생성기 · 연성대학교 게임콘텐츠과</title>
+<title>프로젝트팀 관리 시스템 · 연성대학교 게임콘텐츠과</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root{
@@ -227,6 +227,17 @@
     border-radius:10px;padding:11px 14px;transition:border-color .2s;
   }
   .input-field:focus{outline:none;border-color:rgba(124,92,255,.6)}
+  /* 비밀번호 입력칸은 다른 입력칸의 절반 높이로 */
+  input[type="password"].input-field{padding:5px 14px}
+
+  /* ---------- 평가 결과 검색 ---------- */
+  .results-search-row{
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;
+  }
+  .results-search-row .input-field{flex:1 1 240px;max-width:340px}
+  .results-search-count{font-size:13px;color:var(--muted)}
+  tr.search-hit td{background:rgba(124,92,255,.14) !important}
+  tr.search-hit td:first-child{box-shadow:inset 3px 0 0 var(--a1)}
 
   .eval-rating-card{border:1px solid var(--stroke);border-radius:16px;padding:24px;background:rgba(255,255,255,.03);max-width:640px}
   .eval-rating-head{margin-bottom:14px}
@@ -281,7 +292,7 @@
 
   /* ---------- UPLOAD FORMAT GUIDE ---------- */
   .format-guide{margin-top:32px}
-  .format-guide h3{font-size:14px;font-weight:700;margin-bottom:10px;color:#d3d7e4}
+  .format-guide h3{font-size:14px;font-weight:700;margin:18px 0 10px;color:#d3d7e4}
   .format-guide-note{color:var(--muted);font-size:12.5px;margin-bottom:12px}
   .format-guide img{
     max-width:100%;border:1px solid var(--stroke);border-radius:12px;
@@ -289,11 +300,23 @@
   }
   .upload-actions-row{display:flex;justify-content:flex-end;margin-top:14px}
 
-  footer{
-    padding:40px 0 60px;border-top:1px solid var(--stroke);
+  /* .wrap 의 padding 보다 우선하도록 footer.wrap 으로 지정 */
+  footer.wrap{
+    padding:80px 24px 120px;border-top:1px solid var(--stroke);
     color:var(--dim);font-size:.85rem;
-    display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;
+    display:flex;flex-direction:column;gap:28px;
     position:relative;z-index:1;
+  }
+  .footer-main{
+    display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap;
+  }
+  .footer-left{display:flex;flex-direction:column;gap:6px}
+  .footer-title{color:var(--muted);font-weight:650}
+  .footer-note{font-size:.8rem}
+  .footer-copyright{
+    display:flex;flex-direction:column;gap:6px;
+    padding-top:22px;border-top:1px solid rgba(255,255,255,.06);
+    font-size:.8rem;line-height:1.7;
   }
   .footer-right{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
   .footer-link-btn{
@@ -356,8 +379,8 @@
 
 <header class="wrap app-header">
   <div class="eyebrow"><span class="dot"></span>연성대학교 · 게임콘텐츠과</div>
-  <h1>프로젝트팀 <span class="grad">생성기</span></h1>
-  <p class="lede">재학생 명단 엑셀을 업로드하고, 학년별로 팀을 만들어 기획·아트·개발 역할에 학생을 드래그해서 배치하세요.</p>
+  <h1>프로젝트팀 <span class="grad">관리 시스템</span></h1>
+  <p class="lede">재학생 명단 등록부터 학년별 팀 구성, 팀원 간 기여도 평가와 결과 확인까지 한 곳에서 관리합니다. 명단과 팀 배정은 모든 접속자에게 실시간으로 공유됩니다.</p>
 
   <div class="top-tabs">
     <button type="button" class="top-tab-btn active" data-tab="upload">명단 업로드</button>
@@ -404,9 +427,12 @@
       </div>
 
       <div class="format-guide">
-        <h3>엑셀은 이런 형식으로 작성해 주세요</h3>
-        <p class="format-guide-note">학년-학적반 이름의 시트(1-A, 1-B, 2-A …)마다 No / 학적반 / 수업반 / 학번 / 이름 / 상태 열을 사용합니다.</p>
-        <img src="img/roster-format-guide.svg" alt="엑셀 명단 형식 예시">
+        <button type="button" class="ghost-btn" id="formatGuideToggleBtn">엑셀 양식 보기</button>
+        <div id="formatGuideBody" style="display:none">
+          <h3>엑셀은 이런 형식으로 작성해 주세요</h3>
+          <p class="format-guide-note">학년-학적반 이름의 시트(1-A, 1-B, 2-A …)마다 No / 학적반 / 수업반 / 학번 / 이름 / 상태 열을 사용합니다.</p>
+          <img src="img/roster-format-guide.svg" alt="엑셀 명단 형식 예시">
+        </div>
       </div>
     </div>
 
@@ -484,10 +510,18 @@
           <button type="button" class="grade-chip" data-grade="2">2학년</button>
           <button type="button" class="grade-chip" data-grade="3">3학년</button>
         </div>
+
+        <!-- 검색어가 있으면 학년 구분 없이 전체에서 찾는다 -->
+        <div class="results-search-row">
+          <input type="text" id="resultsSearchInput" class="input-field" placeholder="학번 또는 이름으로 검색">
+          <button type="button" class="ghost-btn" id="resultsSearchClearBtn">검색 지우기</button>
+          <span class="results-search-count" id="resultsSearchCount"></span>
+        </div>
+
         <div class="roster-table-wrap">
           <div class="roster-scroll">
             <table class="roster-table">
-              <thead><tr><th>이름</th><th>학번</th><th>평균 점수</th></tr></thead>
+              <thead><tr><th>학년</th><th>이름</th><th>학번</th><th>평균 점수</th></tr></thead>
               <tbody id="resultsTbody"></tbody>
             </table>
           </div>
@@ -499,11 +533,19 @@
 </main>
 
 <footer class="wrap">
-  <span>연성대학교 게임콘텐츠과 · 프로젝트팀 생성기</span>
-  <span class="footer-right">
-    <button type="button" class="footer-link-btn" id="pwSettingsBtn">비번 설정</button>
-    <span>내부 업무용 도구</span>
-  </span>
+  <div class="footer-main">
+    <div class="footer-left">
+      <span class="footer-title">연성대학교 게임콘텐츠과 · 프로젝트팀 관리 시스템</span>
+      <span class="footer-note">내부 업무용 도구</span>
+    </div>
+    <div class="footer-right">
+      <button type="button" class="footer-link-btn" id="pwSettingsBtn">비번 설정</button>
+    </div>
+  </div>
+  <div class="footer-copyright">
+    <span>© 2026 김강호 (연성대학교 게임콘텐츠과). All rights reserved.</span>
+    <span>본 웹앱의 저작권은 연성대학교 게임콘텐츠과 김강호 교수에게 있으며, 무단 복제·배포 및 상업적 이용을 금합니다.</span>
+  </div>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -573,7 +615,6 @@
     <div class="field-row">
       <input type="password" id="pwPromptInput" class="input-field" placeholder="비밀번호">
     </div>
-    <div class="pw-hint-text" id="pwPromptHint"></div>
     <div class="modal-actions">
       <button type="button" class="apply-btn" id="pwPromptOkBtn">확인</button>
       <button type="button" class="ghost-btn" id="pwPromptCancelBtn">취소</button>
@@ -664,13 +705,10 @@
     return serverHint || passwordHint(getPassword());
   }
 
+  // 힌트는 푸터의 "비번 설정" 창에서만 보여준다 (다른 비번 입력창에는 노출하지 않음)
   function refreshHintLabels(){
     var el = document.getElementById('pwSettingsHint');
     if(el) el.textContent = '현재 비밀번호 힌트: ' + currentHint();
-    var pel = document.getElementById('pwPromptHint');
-    if(pel && document.getElementById('pwPromptOverlay').style.display !== 'none'){
-      pel.textContent = '힌트: ' + currentHint();
-    }
   }
 
   function callServer(action, payload, password, onDone){
@@ -735,8 +773,11 @@
     lastStateJson = JSON.stringify(state);
   }
 
-  function syncFromServer(){
+  /* 첫 요청은 Apps Script가 깨어나는 중이라 간헐적으로 실패한다.
+   * 실패하면 잠시 뒤 한 번 더 시도해서 첫 화면이 옛 데이터로 남지 않게 한다. */
+  function syncFromServer(retriesLeft){
     if(!API_URL) return;
+    if(retriesLeft === undefined) retriesLeft = 2;
     setBusy(true);
     fetch(API_URL + '?action=state')
       .then(function(r){ return r.json(); })
@@ -747,7 +788,12 @@
         refreshHintLabels();
         applyServerState(res.state);
       })
-      .catch(function(){ setBusy(false); });
+      .catch(function(){
+        setBusy(false);
+        if(retriesLeft > 0){
+          setTimeout(function(){ syncFromServer(retriesLeft - 1); }, 1200);
+        }
+      });
   }
 
   // 화면이 가려져 있으면(다른 탭 등) 요청 횟수를 줄이되 완전히 멈추지는 않는다
@@ -794,7 +840,6 @@
     document.getElementById('pwPromptTitle').textContent = title;
     document.getElementById('pwPromptDesc').textContent = desc;
     document.getElementById('pwPromptInput').value = '';
-    document.getElementById('pwPromptHint').textContent = '힌트: ' + currentHint();
     document.getElementById('pwPromptOverlay').style.display = 'flex';
     document.getElementById('pwPromptInput').focus();
   }
@@ -1010,6 +1055,21 @@
     requirePassword('명단 업로드', '명단을 업로드하려면 비밀번호를 입력하세요.', function(pw){
       uploadPassword = pw;
       handleFile(f);
+    });
+  });
+
+  /* 엑셀 양식 안내 이미지 — 담당 교수만 필요한 정보라 비밀번호로 가린다 */
+  document.getElementById('formatGuideToggleBtn').addEventListener('click', function(){
+    var body = document.getElementById('formatGuideBody');
+    var btn = document.getElementById('formatGuideToggleBtn');
+    if(body.style.display !== 'none'){
+      body.style.display = 'none';
+      btn.textContent = '엑셀 양식 보기';
+      return;
+    }
+    requirePassword('엑셀 양식 보기', '엑셀 작성 양식을 보려면 비밀번호를 입력하세요.', function(){
+      body.style.display = 'block';
+      btn.textContent = '엑셀 양식 숨기기';
     });
   });
 
@@ -1980,20 +2040,47 @@
     renderResultsList(currentResultsGrade);
   });
 
+  /* 검색어가 있으면 학년 탭과 무관하게 전체 명단에서 찾아 일치하는 학생만
+   * 보여준다. 행을 걸러내는 방식이라 스크롤 위치를 계산할 필요가 없어
+   * 동작이 단순하고 명단이 커져도 빠르다. */
   function renderResultsList(grade){
     var tbody = document.getElementById('resultsTbody');
+    var countEl = document.getElementById('resultsSearchCount');
+    var query = document.getElementById('resultsSearchInput').value.trim().toLowerCase();
     tbody.innerHTML = '';
-    var students = state.roster.filter(function(s){ return s.grade === grade; });
+
+    var students, searching = query.length > 0;
+    if(searching){
+      students = state.roster.filter(function(s){
+        return s.name.toLowerCase().indexOf(query) !== -1 ||
+               String(s.studentId).toLowerCase().indexOf(query) !== -1;
+      });
+      countEl.textContent = students.length
+        ? '전체 학년에서 ' + students.length + '명 검색됨'
+        : '검색 결과가 없습니다';
+    } else {
+      students = state.roster.filter(function(s){ return s.grade === grade; });
+      countEl.textContent = '';
+    }
+
     if(students.length === 0){
-      tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--dim)">해당 학년 학생이 없습니다</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--dim)">' +
+        (searching ? '학번 또는 이름이 일치하는 학생이 없습니다' : '해당 학년 학생이 없습니다') + '</td></tr>';
       return;
     }
+
+    // 많은 행을 한 번에 붙일 때 리플로우를 줄이기 위해 조각으로 모아서 삽입
+    var frag = document.createDocumentFragment();
     students.forEach(function(s){
       var ratings = computeIncomingRatings(s.studentId);
       var avg = ratings.length
         ? (ratings.reduce(function(sum, r){ return sum + r.score; }, 0) / ratings.length).toFixed(1)
         : '-';
       var tr = document.createElement('tr');
+      if(searching) tr.className = 'search-hit';
+
+      var tdGrade = document.createElement('td');
+      tdGrade.textContent = s.grade + '학년';
       var tdName = document.createElement('td');
       var link = document.createElement('button');
       link.type = 'button';
@@ -2005,12 +2092,25 @@
       tdSid.textContent = s.studentId;
       var tdAvg = document.createElement('td');
       tdAvg.textContent = avg;
+
+      tr.appendChild(tdGrade);
       tr.appendChild(tdName);
       tr.appendChild(tdSid);
       tr.appendChild(tdAvg);
-      tbody.appendChild(tr);
+      frag.appendChild(tr);
     });
+    tbody.appendChild(frag);
   }
+
+  document.getElementById('resultsSearchInput').addEventListener('input', function(){
+    renderResultsList(currentResultsGrade);
+  });
+  document.getElementById('resultsSearchClearBtn').addEventListener('click', function(){
+    var input = document.getElementById('resultsSearchInput');
+    input.value = '';
+    renderResultsList(currentResultsGrade);
+    input.focus();
+  });
 
   function openResultDetail(student, ratings, avg){
     document.getElementById('resultDetailTitle').textContent = student.name + ' (' + student.studentId + ') 평가 내역';
