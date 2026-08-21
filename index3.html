@@ -163,13 +163,25 @@
   }
   .student-chip .chip-remove:hover{color:#ff9ec4}
 
-  .team-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:16px}
+  /* 역할 3칸이 잘리지 않도록 한 줄에 한 팀만 배치한다 */
+  .team-grid{display:grid;grid-template-columns:1fr;gap:16px;margin-bottom:16px}
   .team-card{border:1px solid var(--stroke);border-radius:14px;background:rgba(255,255,255,.025);overflow:hidden}
   .team-card-head{
     padding:12px 16px;font-weight:700;font-size:14px;
     background:linear-gradient(135deg,rgba(124,92,255,.18),rgba(34,211,238,.1));
     border-bottom:1px solid var(--stroke);
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;
   }
+  .team-name-input{
+    font-family:inherit;font-size:14px;font-weight:700;color:var(--text);
+    background:rgba(255,255,255,.06);border:1px solid var(--stroke);
+    border-radius:8px;padding:5px 10px;width:150px;transition:.2s;
+  }
+  .team-name-input:hover{background:rgba(255,255,255,.1)}
+  .team-name-input:focus{
+    outline:none;border-color:rgba(124,92,255,.7);background:rgba(255,255,255,.12);
+  }
+  .team-head-count{color:var(--muted);font-weight:650;font-size:13px}
   .role-cols{display:grid;grid-template-columns:repeat(3,1fr)}
   .role-col{padding:10px;border-left:1px solid var(--stroke)}
   .role-col:first-child{border-left:none}
@@ -751,6 +763,9 @@
     }
     var ratingView = document.getElementById('evalRatingView');
     if(ratingView && ratingView.style.display !== 'none') return true;
+    // 팀 이름을 입력하는 중이면 다시 그리지 않는다 (입력 내용이 날아가는 것 방지)
+    var active = document.activeElement;
+    if(active && active.classList && active.classList.contains('team-name-input')) return true;
     return false;
   }
 
@@ -1498,6 +1513,28 @@
     });
   }
 
+  function renameTeamLocal(grade, teamId, name){
+    var gd = state.teamsByGrade[grade];
+    if(!gd) return;
+    var team = (gd.teams || []).filter(function(t){ return t.id === teamId; })[0];
+    if(team) team.name = name;
+  }
+
+  function renameTeam(grade, teamId, name){
+    callServer('renameTeam', { grade: grade, teamId: teamId, name: name }, null, function(res){
+      if(res && !res.ok){
+        showToast('팀 이름 변경에 실패했습니다: ' + (res.error || '알 수 없는 오류'));
+        renderTeamBoard();   // 서버 값으로 되돌린다
+        return;
+      }
+      if(res && res.state) state = res.state;
+      else renameTeamLocal(grade, teamId, name);
+      saveState();
+      markStateSynced();
+      showToast('팀 이름을 "' + name + '"으로 변경했습니다');
+    });
+  }
+
   function unassignStudent(grade, studentId, onDone){
     callServer('removeStudent', { grade: grade, studentId: studentId }, null, function(res){
       if(res && res.ok && res.state) state = res.state;
@@ -1705,7 +1742,42 @@
       var totalInTeam = ROLES.reduce(function(sum, role){ return sum + (team.roles[role] || []).length; }, 0);
       var head = document.createElement('div');
       head.className = 'team-card-head';
-      head.textContent = team.name + ' (' + totalInTeam + '명)';
+
+      // 팀 이름은 직접 고쳐 쓸 수 있고, 수정하면 모두에게 공유된다
+      var nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.className = 'team-name-input';
+      nameInput.value = team.name;
+      nameInput.maxLength = 30;
+      nameInput.title = '팀 이름을 직접 입력할 수 있습니다';
+      nameInput.dataset.original = team.name;
+      (function(teamId){
+        function commit(){
+          var next = nameInput.value.trim();
+          if(next === nameInput.dataset.original) return;   // 변경 없음
+          if(!next){                                        // 비우면 원래 이름 유지
+            nameInput.value = nameInput.dataset.original;
+            return;
+          }
+          nameInput.value = next;   // 앞뒤 공백을 없앤 값으로 화면도 맞춘다
+          nameInput.dataset.original = next;
+          renameTeam(grade, teamId, next);
+        }
+        nameInput.addEventListener('blur', commit);
+        nameInput.addEventListener('keydown', function(e){
+          if(e.key === 'Enter'){ nameInput.blur(); }
+          else if(e.key === 'Escape'){
+            nameInput.value = nameInput.dataset.original;
+            nameInput.blur();
+          }
+        });
+      })(team.id);
+      head.appendChild(nameInput);
+
+      var countEl = document.createElement('span');
+      countEl.className = 'team-head-count';
+      countEl.textContent = '(' + totalInTeam + '명)';
+      head.appendChild(countEl);
       card.appendChild(head);
 
       var roleCols = document.createElement('div');

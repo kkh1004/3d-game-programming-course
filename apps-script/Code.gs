@@ -220,6 +220,19 @@ function applyAction(store, action, payload, password) {
       return { ok: true, message: 'team count set' };
     }
 
+    // 팀 이름 변경 — 팀 배정과 같은 성격이라 비밀번호를 요구하지 않는다
+    case 'renameTeam': {
+      var rg = String(payload.grade);
+      var rgd = state.teamsByGrade[rg];
+      if (!rgd) return { ok: false, error: 'grade not found' };
+      var rteam = (rgd.teams || []).filter(function (t) { return t.id === payload.teamId; })[0];
+      if (!rteam) return { ok: false, error: 'team not found' };
+      var nm = String(payload.name == null ? '' : payload.name).trim().slice(0, 30);
+      // 빈 이름이면 "3팀" 같은 기본 이름으로 되돌린다
+      rteam.name = nm || (String(payload.teamId).replace('t', '') + '팀');
+      return { ok: true, message: 'team renamed' };
+    }
+
     case 'clearGrade': {
       if (password !== store.password) return { ok: false, error: 'wrong password' };
       var g2 = String(payload.grade);
