@@ -128,6 +128,7 @@
     display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;
     margin-bottom:20px;
   }
+  .team-toolbar-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .team-count-field{display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--muted)}
   .team-count-field input{
     width:64px;font-family:inherit;font-size:14px;color:var(--text);text-align:center;
@@ -466,7 +467,10 @@
             <input type="number" id="teamCountInput" min="0" max="30" value="4">
             <button type="button" class="apply-btn" id="teamCountApplyBtn">적용</button>
           </div>
-          <button type="button" class="ghost-btn" id="clearGradeBtn">이 학년 배정 초기화</button>
+          <div class="team-toolbar-actions">
+            <button type="button" class="ghost-btn" id="exportTeamsBtn">내보내기</button>
+            <button type="button" class="ghost-btn" id="clearGradeBtn">이 학년 배정 초기화</button>
+          </div>
         </div>
 
         <div class="team-body">
@@ -1644,6 +1648,66 @@
         ? '팀이 ' + (newCount - oldCount) + '개 추가되었습니다 (총 ' + newCount + '개)'
         : '팀이 ' + newCount + '개로 줄었습니다');
     });
+  });
+
+  /* ============================================================
+   * 팀 배정 내보내기 — 현재 보고 있는 학년의 배정 결과를 엑셀로 저장.
+   * 업로드에 쓰는 SheetJS 라이브러리를 그대로 사용한다.
+   * ============================================================ */
+  function pad2(n){ return (n < 10 ? '0' : '') + n; }
+
+  function todayStamp(){
+    var d = new Date();
+    return String(d.getFullYear()) + pad2(d.getMonth() + 1) + pad2(d.getDate());
+  }
+
+  function buildTeamExportRows(grade){
+    var gd = state.teamsByGrade[grade];
+    var rows = [['구분', '팀명', '역할', '학번', '이름', '학적반']];
+
+    (gd && gd.teams || []).forEach(function(team){
+      var title = teamTitle(team);
+      ROLES.forEach(function(role){
+        (team.roles[role] || []).forEach(function(sid){
+          var s = studentById(sid);
+          if(!s) return;
+          rows.push([slotLabel(team.id), title, role, s.studentId, s.name, s.section]);
+        });
+      });
+    });
+
+    (gd && gd.individual || []).forEach(function(sid){
+      var s = studentById(sid);
+      if(!s) return;
+      rows.push(['개인프로젝트', '', '', s.studentId, s.name, s.section]);
+    });
+
+    state.roster.forEach(function(s){
+      if(s.grade !== grade) return;
+      if(state.assignedMap[s.studentId]) return;
+      rows.push(['미배정', '', '', s.studentId, s.name, s.section]);
+    });
+
+    return rows;
+  }
+
+  document.getElementById('exportTeamsBtn').addEventListener('click', function(){
+    var grade = currentTeamGrade;
+    var rows = buildTeamExportRows(grade);
+    if(rows.length <= 1){
+      showToast('내보낼 ' + grade + '학년 자료가 없습니다');
+      return;
+    }
+    try {
+      var ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = [{ wch: 12 }, { wch: 18 }, { wch: 8 }, { wch: 13 }, { wch: 10 }, { wch: 9 }];
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, grade + '학년');
+      XLSX.writeFile(wb, grade + '학년_팀배정_' + todayStamp() + '.xlsx');
+      showToast(grade + '학년 팀 배정을 엑셀로 저장했습니다 (' + (rows.length - 1) + '명)');
+    } catch(e){
+      showToast('엑셀 저장에 실패했습니다');
+    }
   });
 
   document.getElementById('clearGradeBtn').addEventListener('click', function(){
