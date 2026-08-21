@@ -172,11 +172,13 @@
     border-bottom:1px solid var(--stroke);
     display:flex;align-items:center;gap:10px;flex-wrap:wrap;
   }
+  .team-slot-label{font-weight:700;font-size:14px;flex-shrink:0}
   .team-name-input{
-    font-family:inherit;font-size:14px;font-weight:700;color:var(--text);
+    font-family:inherit;font-size:13.5px;font-weight:650;color:var(--text);
     background:rgba(255,255,255,.06);border:1px solid var(--stroke);
-    border-radius:8px;padding:5px 10px;width:150px;transition:.2s;
+    border-radius:8px;padding:5px 10px;width:170px;transition:.2s;
   }
+  .team-name-input::placeholder{color:var(--dim);font-weight:500}
   .team-name-input:hover{background:rgba(255,255,255,.1)}
   .team-name-input:focus{
     outline:none;border-color:rgba(124,92,255,.7);background:rgba(255,255,255,.12);
@@ -1513,25 +1515,48 @@
     });
   }
 
-  function renameTeamLocal(grade, teamId, name){
+  /* "1팀/2팀"은 팀의 순번이라 고정이고, 그 옆에 붙는 팀명(title)만 바꿀 수 있다. */
+  function slotLabel(teamId){
+    return String(teamId).replace('t', '') + '팀';
+  }
+
+  // 예전에는 팀명을 name에 직접 적었으므로, title이 없고 name이 순번과
+  // 다르면 그 값을 팀명으로 물려받는다
+  function teamTitle(team){
+    if(team.title !== undefined) return team.title;
+    if(team.name && team.name !== slotLabel(team.id)) return team.name;
+    return '';
+  }
+
+  function teamFullName(team){
+    var t = teamTitle(team);
+    return t ? slotLabel(team.id) + ' (' + t + ')' : slotLabel(team.id);
+  }
+
+  function setTeamTitleLocal(grade, teamId, title){
     var gd = state.teamsByGrade[grade];
     if(!gd) return;
     var team = (gd.teams || []).filter(function(t){ return t.id === teamId; })[0];
-    if(team) team.name = name;
+    if(team){
+      team.title = title;
+      team.name = slotLabel(teamId);
+    }
   }
 
-  function renameTeam(grade, teamId, name){
-    callServer('renameTeam', { grade: grade, teamId: teamId, name: name }, null, function(res){
+  function setTeamTitle(grade, teamId, title){
+    callServer('setTeamTitle', { grade: grade, teamId: teamId, title: title }, null, function(res){
       if(res && !res.ok){
-        showToast('팀 이름 변경에 실패했습니다: ' + (res.error || '알 수 없는 오류'));
+        showToast('팀명 저장에 실패했습니다: ' + (res.error || '알 수 없는 오류'));
         renderTeamBoard();   // 서버 값으로 되돌린다
         return;
       }
       if(res && res.state) state = res.state;
-      else renameTeamLocal(grade, teamId, name);
+      else setTeamTitleLocal(grade, teamId, title);
       saveState();
       markStateSynced();
-      showToast('팀 이름을 "' + name + '"으로 변경했습니다');
+      showToast(title
+        ? slotLabel(teamId) + ' 팀명을 "' + title + '"으로 저장했습니다'
+        : slotLabel(teamId) + ' 팀명을 지웠습니다');
     });
   }
 
@@ -1743,36 +1768,39 @@
       var head = document.createElement('div');
       head.className = 'team-card-head';
 
-      // 팀 이름은 직접 고쳐 쓸 수 있고, 수정하면 모두에게 공유된다
-      var nameInput = document.createElement('input');
-      nameInput.type = 'text';
-      nameInput.className = 'team-name-input';
-      nameInput.value = team.name;
-      nameInput.maxLength = 30;
-      nameInput.title = '팀 이름을 직접 입력할 수 있습니다';
-      nameInput.dataset.original = team.name;
+      // 팀 순번은 고정 (수정 불가)
+      var slotEl = document.createElement('span');
+      slotEl.className = 'team-slot-label';
+      slotEl.textContent = slotLabel(team.id);
+      head.appendChild(slotEl);
+
+      // 팀명은 자유롭게 입력할 수 있고, 저장하면 모두에게 공유된다
+      var titleInput = document.createElement('input');
+      titleInput.type = 'text';
+      titleInput.className = 'team-name-input';
+      titleInput.value = teamTitle(team);
+      titleInput.maxLength = 30;
+      titleInput.placeholder = '팀명 입력';
+      titleInput.title = '팀명을 자유롭게 입력할 수 있습니다 (비우면 삭제)';
+      titleInput.dataset.original = teamTitle(team);
       (function(teamId){
         function commit(){
-          var next = nameInput.value.trim();
-          if(next === nameInput.dataset.original) return;   // 변경 없음
-          if(!next){                                        // 비우면 원래 이름 유지
-            nameInput.value = nameInput.dataset.original;
-            return;
-          }
-          nameInput.value = next;   // 앞뒤 공백을 없앤 값으로 화면도 맞춘다
-          nameInput.dataset.original = next;
-          renameTeam(grade, teamId, next);
+          var next = titleInput.value.trim();
+          if(next === titleInput.dataset.original) return;   // 변경 없음
+          titleInput.value = next;   // 앞뒤 공백을 없앤 값으로 화면도 맞춘다
+          titleInput.dataset.original = next;
+          setTeamTitle(grade, teamId, next);
         }
-        nameInput.addEventListener('blur', commit);
-        nameInput.addEventListener('keydown', function(e){
-          if(e.key === 'Enter'){ nameInput.blur(); }
+        titleInput.addEventListener('blur', commit);
+        titleInput.addEventListener('keydown', function(e){
+          if(e.key === 'Enter'){ titleInput.blur(); }
           else if(e.key === 'Escape'){
-            nameInput.value = nameInput.dataset.original;
-            nameInput.blur();
+            titleInput.value = titleInput.dataset.original;
+            titleInput.blur();
           }
         });
       })(team.id);
-      head.appendChild(nameInput);
+      head.appendChild(titleInput);
 
       var countEl = document.createElement('span');
       countEl.className = 'team-head-count';
@@ -1959,7 +1987,7 @@
 
     var head = document.createElement('div');
     head.className = 'eval-rating-head';
-    head.innerHTML = '<h3>' + escapeHtml(student.grade) + '학년 ' + escapeHtml(team.name) + ' · ' + escapeHtml(student.name) + '님</h3>' +
+    head.innerHTML = '<h3>' + escapeHtml(student.grade) + '학년 ' + escapeHtml(teamFullName(team)) + ' · ' + escapeHtml(student.name) + '님</h3>' +
       '<p>팀원의 기여도를 1점(낮음)~5점(높음)으로 평가해 주세요.</p>';
     card.appendChild(head);
 
