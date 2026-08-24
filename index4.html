@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/png" href="img/favicon.png">
+<title>시간표 생성기 · 연성대학교 게임콘텐츠과</title>
+<style>
+  :root{
+    --bg:#07070c;
+    --surface:rgba(255,255,255,.045);
+    --stroke:rgba(255,255,255,.1);
+    --text:#f2f3f7;
+    --muted:#9297ab;
+    --dim:#6a6f83;
+    --a1:#7c5cff;
+    --a2:#22d3ee;
+    --a3:#ff5c9d;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Pretendard','Pretendard Variable',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic','Segoe UI',Roboto,sans-serif;
+    line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  .bg-glow{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+  .bg-glow::before,.bg-glow::after{
+    content:'';position:absolute;border-radius:50%;filter:blur(120px);opacity:.3;
+  }
+  .bg-glow::before{width:600px;height:600px;background:var(--a1);top:-260px;left:-200px}
+  .bg-glow::after{width:520px;height:520px;background:var(--a2);top:80px;right:-220px;opacity:.18}
+  .wrap{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:0 24px}
+
+  header.app-header{padding:64px 0 28px}
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:9px;
+    font-size:13px;letter-spacing:.06em;color:var(--muted);
+    border:1px solid var(--stroke);background:var(--surface);
+    padding:7px 15px;border-radius:100px;margin-bottom:22px;
+  }
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--a2);box-shadow:0 0 10px var(--a2)}
+  h1{
+    font-size:clamp(2rem,4.4vw,2.8rem);
+    font-weight:800;letter-spacing:-.03em;margin-bottom:14px;
+  }
+  h1 .grad{
+    background:linear-gradient(105deg,var(--a2) 0%,var(--a1) 55%,var(--a3) 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;
+  }
+  .lede{color:var(--muted);max-width:680px;font-size:1rem}
+
+  main.app-main{padding-bottom:80px}
+  .panel{
+    border:1px solid var(--stroke);background:var(--surface);
+    border-radius:16px;padding:28px;
+  }
+  .empty-state{color:var(--dim);font-size:13.5px;padding:48px 28px;text-align:center}
+
+  footer.wrap{
+    padding:80px 24px 120px;border-top:1px solid var(--stroke);
+    color:var(--dim);font-size:.85rem;
+    display:flex;flex-direction:column;gap:28px;
+    position:relative;z-index:1;
+  }
+  .footer-main{
+    display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap;
+  }
+  .footer-left{display:flex;flex-direction:column;gap:6px}
+  .footer-title{color:var(--muted);font-weight:650}
+  .footer-note{font-size:.8rem}
+  .footer-copyright{
+    display:flex;flex-direction:column;gap:6px;
+    padding-top:22px;border-top:1px solid rgba(255,255,255,.06);
+    font-size:.8rem;line-height:1.7;
+  }
+
+  @media (max-width:560px){
+    header.app-header{padding:48px 0 20px}
+    .panel{padding:18px}
+  }
+</style>
+</head>
+<body>
+<div class="bg-glow"></div>
+
+<header class="wrap app-header">
+  <div class="eyebrow"><span class="dot"></span>연성대학교 · 게임콘텐츠과</div>
+  <h1>시간표 <span class="grad">생성기</span></h1>
+  <p class="lede">준비 중입니다.</p>
+</header>
+
+<main class="wrap app-main">
+  <section class="panel">
+    <div class="empty-state">기능은 아직 작업 전입니다.</div>
+  </section>
+</main>
+
+<footer class="wrap">
+  <div class="footer-main">
+    <div class="footer-left">
+      <span class="footer-title">연성대학교 게임콘텐츠과 · 시간표 생성기</span>
+      <span class="footer-note">내부 업무용 도구</span>
+    </div>
+  </div>
+  <div class="footer-copyright">
+    <span>© 2026 김강호 (연성대학교 게임콘텐츠과). All rights reserved.</span>
+    <span>본 웹앱의 저작권은 연성대학교 게임콘텐츠과 김강호 교수에게 있으며, 무단 복제·배포 및 상업적 이용을 금합니다.</span>
+  </div>
+</footer>
+</body>
+</html>
