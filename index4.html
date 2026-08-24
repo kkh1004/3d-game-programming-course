@@ -210,31 +210,53 @@
   }
   .board-range{color:var(--muted);font-weight:650;font-size:12.5px}
   .board-scroll{overflow-x:auto}
-  table.tt-table{width:100%;border-collapse:collapse;font-size:12px;min-width:620px}
+  table.tt-table{border-collapse:collapse;font-size:11.5px;table-layout:fixed}
   table.tt-table th{
-    background:#1c1c26;color:#d3d7e4;font-weight:650;padding:8px 6px;
-    border:1px solid rgba(255,255,255,.07);
+    background:#1c1c26;color:#d3d7e4;font-weight:650;padding:6px 4px;
+    border:1px solid rgba(255,255,255,.09);text-align:center;
   }
+  table.tt-table th.th-day{background:#22222e;font-size:12.5px}
+  table.tt-table th.th-hak{background:#1f1f2a;color:#cbd0e2}
+  table.tt-table th.th-su{background:#1a1a24;color:var(--muted);font-weight:600;font-size:11px}
   table.tt-table td{
-    border:1px solid rgba(255,255,255,.07);padding:0;height:52px;vertical-align:top;
+    border:1px solid rgba(255,255,255,.07);padding:0;height:50px;vertical-align:top;
     background:#121218;
   }
-  .th-period{width:64px}
-  .th-time{width:92px;font-weight:500;color:var(--dim);font-size:11px}
+  table.tt-table .day-edge{border-left:2px solid rgba(255,255,255,.2)}
+  table.tt-table .hak-edge{border-left:1px solid rgba(255,255,255,.16)}
   .period-cell{background:#17171f;color:var(--muted);text-align:center;font-weight:650}
-  .period-cell small{display:block;color:var(--dim);font-weight:500;font-size:10.5px}
-  .slot{height:100%;min-height:52px;padding:3px;transition:.12s}
-  .slot.drag-over{background:rgba(124,92,255,.16);box-shadow:inset 0 0 0 2px var(--a1)}
-  .slot.occupied{padding:0}
+  .period-cell small{display:block;color:var(--dim);font-weight:500;font-size:10px}
+  .slot{height:100%;min-height:50px;padding:2px;transition:.12s}
+  .slot.drag-over{background:rgba(124,92,255,.18);box-shadow:inset 0 0 0 2px var(--a1)}
+  td.occupied{padding:0}
   .placed{
-    height:100%;border-radius:8px;padding:6px 8px;
-    background:linear-gradient(135deg,rgba(124,92,255,.32),rgba(34,211,238,.2));
-    border:1px solid rgba(124,92,255,.45);
+    height:100%;border-radius:7px;padding:5px 6px;
     display:flex;flex-direction:column;gap:1px;position:relative;cursor:grab;
+    overflow:hidden;
   }
   .placed:active{cursor:grabbing}
-  .placed .p-name{font-size:12px;font-weight:700;color:#fff;padding-right:14px}
-  .placed .p-meta{font-size:11px;color:#cfd3e6}
+  .placed .p-name{font-size:11.5px;font-weight:700;color:#fff;padding-right:12px;line-height:1.3;word-break:break-all}
+  .placed .p-meta{font-size:10.5px;color:rgba(255,255,255,.82);line-height:1.35}
+  .placed .p-weeks{font-size:10px;color:rgba(255,255,255,.66)}
+
+  .lock-state{
+    font-size:12.5px;font-weight:650;color:var(--dim);
+    border:1px solid var(--stroke);background:rgba(255,255,255,.04);
+    border-radius:100px;padding:5px 12px;
+  }
+  .lock-state.is-open{color:#8ef0c8;border-color:rgba(61,220,151,.4)}
+
+  .label-checks{display:flex;gap:8px;flex-wrap:wrap;padding-top:3px}
+  .label-check{
+    display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+    border:1px solid var(--stroke);background:rgba(255,255,255,.05);
+    border-radius:9px;padding:8px 12px;font-size:13.5px;font-weight:650;
+    color:var(--muted);transition:.15s;user-select:none;
+  }
+  .label-check:hover{color:var(--text)}
+  .label-check input{accent-color:var(--a1);margin:0;cursor:pointer}
+  .label-check.on{color:#0b0b12;font-weight:700;border-color:transparent;
+    background:linear-gradient(135deg,var(--a2),var(--a1))}
   .placed .p-del{
     position:absolute;top:3px;right:4px;border:none;background:none;
     color:#cfd3e6;font-size:13px;line-height:1;cursor:pointer;padding:0 2px;
@@ -330,7 +352,10 @@
     <div class="tab-view active" id="tab-input">
       <div class="section-head">
         <h2>등록된 과목 <span class="badge" id="subjectCount">0</span></h2>
-        <button type="button" class="ghost-btn" id="exportSubjectsBtn">내보내기</button>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <span class="lock-state" id="lockState">🔒 편집 잠김</span>
+          <button type="button" class="ghost-btn" id="exportSubjectsBtn">내보내기</button>
+        </div>
       </div>
 
       <div class="table-wrap" id="subjectTableWrap" style="display:none">
@@ -382,8 +407,8 @@
             </select>
           </div>
           <div class="field">
-            <label for="fClassLabel">반</label>
-            <select id="fClassLabel" class="input-field"></select>
+            <label>반 (여러 개 선택 가능)</label>
+            <div class="label-checks" id="fClassLabels"></div>
           </div>
           <div class="field">
             <label for="fProfessor">교수명</label>
@@ -475,6 +500,23 @@
 
 <div class="toast" id="toast"></div>
 
+<div class="modal-overlay" id="pwOverlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>편집 잠금 해제</h3>
+      <button type="button" class="modal-close" id="pwClose">×</button>
+    </div>
+    <p class="section-note">과목 등록·수정·삭제와 시간표 배치는 비밀번호가 필요합니다. 한 번 입력하면 창을 닫을 때까지 유지됩니다.</p>
+    <div class="field" style="margin-top:14px">
+      <input type="password" id="pwInput" class="input-field" placeholder="비밀번호">
+    </div>
+    <div class="form-actions">
+      <button type="button" class="ghost-btn" id="pwCancelBtn">취소</button>
+      <button type="button" class="apply-btn" id="pwOkBtn">확인</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="roomPickOverlay" style="display:none">
   <div class="modal-box">
     <div class="modal-header">
@@ -495,6 +537,52 @@
   var DEFAULT_ROOMS = ['801', '805', '808', '901', '905-1', '905-2'];
   var LABELS = { '학적': ['A', 'B'], '수업': ['a', 'b', 'c'] };
   var STORAGE_KEY = 'timetableGenState_v1';
+  var PASSWORD = '1004';
+  var UNLOCK_KEY = 'timetableUnlocked_v1';
+
+  /* ============================================================
+   * 반 배치 구조
+   *   요일마다 보이지 않는 4칸을 두고, 칸 너비를 2:1:1:2로 준다.
+   *     수업반 a = 1칸(2), b = 2칸(1+1), c = 1칸(2)  → 셋 다 같은 너비
+   *     학적반 A = 1~2칸(2+1), B = 3~4칸(1+2)       → 둘 다 같은 너비
+   *   그래서 b반이 두 칸을 쓰더라도 화면에서는 커 보이지 않는다.
+   * ============================================================ */
+  var DAY_COL_COUNT = 4;
+  var COL_UNITS = [2, 1, 1, 2];
+  var CLASS_SPANS = {
+    '수업': { 'a': [0, 0], 'b': [1, 2], 'c': [3, 3] },
+    '학적': { 'A': [0, 1], 'B': [2, 3] }
+  };
+
+  function spanOf(subject){
+    var byType = CLASS_SPANS[subject.classType];
+    return (byType && byType[subject.classLabel]) || [0, DAY_COL_COUNT - 1];
+  }
+  function colsOverlap(a, b){
+    return !(a[1] < b[0] || b[1] < a[0]);
+  }
+
+  /* ============================================================
+   * 과목 색 — 원색을 피해 채도·명도를 낮춘 색을 쓴다.
+   * 같은 과목명이면 같은 계열, 교수가 다르면 색상만 살짝 틀어 준다.
+   * ============================================================ */
+  function hashStr(s){
+    var h = 0;
+    s = String(s || '');
+    for(var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return Math.abs(h);
+  }
+  function subjectColor(subject){
+    var hue = hashStr(subject.name) % 360;
+    var v = hashStr(subject.professor) % 5;          // 교수별 변주 (-2 ~ +2)
+    var shifted = (hue + (v - 2) * 11 + 360) % 360;
+    var sat = 34 + v * 3;                            // 34~46%
+    var light = 29 + v * 2;                          // 29~37%
+    return {
+      bg: 'hsl(' + shifted + ',' + sat + '%,' + light + '%)',
+      border: 'hsl(' + shifted + ',' + (sat + 10) + '%,' + (light + 20) + '%)'
+    };
+  }
 
   /* ============================================================
    * 교시 시간 — 1교시 09:30~10:20, 이후 60분 간격(50분 수업 + 10분 휴식).
@@ -693,16 +781,17 @@
       problems.push('이 구간에 남은 주차는 ' + cap + '주인데 과목 주차는 ' + subject.weeks + '주입니다.');
       return problems;
     }
+    var mySpan = spanOf(subject);
     forEachOverlap(grade, boardIdx, subject, day, start, function(g, bi, p, other){
       var where = g + '학년 ' + p.day + ' ' + periodLabel(p.start);
-      if(g === grade && other.classType === subject.classType && other.classLabel === subject.classLabel){
-        problems.push(subject.classType + '반 ' + subject.classLabel + ' 시간 중복 — ' + other.name + ' (' + where + ')');
+      // 같은 학년에서 칸이 겹치면 같은 학생이 두 수업을 듣게 된다.
+      // 학적반 A(1~2칸)와 수업반 a(1칸)·b(2~3칸)처럼 형태가 달라도 칸이 겹치면 잡힌다.
+      if(g === grade && colsOverlap(mySpan, spanOf(other))){
+        problems.push(other.classType + '반 ' + other.classLabel + '와(과) 시간이 겹칩니다 — ' +
+          other.name + ' (' + where + ')');
       }
       if(other.professor && subject.professor && other.professor === subject.professor){
         problems.push(subject.professor + ' 교수 시간 중복 — ' + other.name + ' (' + where + ')');
-      }
-      if(g === grade && bi === boardIdx){
-        problems.push('이미 ' + other.name + '이(가) 놓여 있는 자리입니다.');
       }
     });
     return dedupe(problems);
@@ -716,6 +805,57 @@
       problems.push(g + '학년 ' + other.name + ' 사용 중 (' + p.day + ' ' + periodLabel(p.start) + ')');
     });
     return dedupe(problems);
+  }
+
+  /* ============================================================
+   * 편집 잠금 — 한 번 풀면 창을 닫을 때까지 유지된다(sessionStorage).
+   * ============================================================ */
+  function isUnlocked(){
+    try { return sessionStorage.getItem(UNLOCK_KEY) === '1'; } catch(e){ return false; }
+  }
+  function setUnlocked(){
+    try { sessionStorage.setItem(UNLOCK_KEY, '1'); } catch(e){}
+  }
+
+  var pwOverlay = document.getElementById('pwOverlay');
+  var pwInput = document.getElementById('pwInput');
+  var pwOnOk = null;
+
+  function requireUnlock(onOk){
+    if(isUnlocked()){ onOk(); return; }
+    pwOnOk = onOk;
+    pwInput.value = '';
+    pwOverlay.style.display = 'flex';
+    pwInput.focus();
+  }
+  function closePw(){
+    pwOverlay.style.display = 'none';
+    pwOnOk = null;
+  }
+  function submitPw(){
+    if(pwInput.value !== PASSWORD){
+      showToast('비밀번호가 일치하지 않습니다', true);
+      return;
+    }
+    setUnlocked();
+    var fn = pwOnOk;
+    closePw();
+    updateLockUi();
+    showToast('편집이 잠금 해제되었습니다');
+    if(fn) fn();
+  }
+  document.getElementById('pwOkBtn').addEventListener('click', submitPw);
+  document.getElementById('pwCancelBtn').addEventListener('click', closePw);
+  document.getElementById('pwClose').addEventListener('click', closePw);
+  pwInput.addEventListener('keydown', function(e){ if(e.key === 'Enter') submitPw(); });
+  pwOverlay.addEventListener('click', function(e){ if(e.target === pwOverlay) closePw(); });
+
+  function updateLockUi(){
+    var el = document.getElementById('lockState');
+    if(!el) return;
+    var open = isUnlocked();
+    el.textContent = open ? '편집 잠금 해제됨' : '🔒 편집 잠김';
+    el.className = 'lock-state' + (open ? ' is-open' : '');
   }
 
   /* ============================================================
@@ -735,14 +875,31 @@
    * 입력 폼
    * ============================================================ */
   var classTypeEl = document.getElementById('fClassType');
-  var classLabelEl = document.getElementById('fClassLabel');
-  function renderClassLabels(){
+  var classLabelEl = document.getElementById('fClassLabels');
+  function renderClassLabels(checked){
     var opts = LABELS[classTypeEl.value] || [];
-    classLabelEl.innerHTML = opts.map(function(o){
-      return '<option value="' + o + '">' + o + '반</option>';
-    }).join('');
+    classLabelEl.innerHTML = '';
+    opts.forEach(function(o){
+      var lab = document.createElement('label');
+      lab.className = 'label-check';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = o;
+      if(checked && checked.indexOf(o) !== -1){
+        cb.checked = true;
+        lab.classList.add('on');
+      }
+      cb.addEventListener('change', function(){ lab.classList.toggle('on', cb.checked); });
+      lab.appendChild(cb);
+      lab.appendChild(document.createTextNode(o + '반'));
+      classLabelEl.appendChild(lab);
+    });
   }
-  classTypeEl.addEventListener('change', renderClassLabels);
+  function selectedLabels(){
+    return Array.prototype.slice.call(classLabelEl.querySelectorAll('input:checked'))
+      .map(function(cb){ return cb.value; });
+  }
+  classTypeEl.addEventListener('change', function(){ renderClassLabels(); });
 
   function clearForm(){
     document.getElementById('fName').value = '';
@@ -768,6 +925,10 @@
   }
 
   function startEdit(id){
+    requireUnlock(function(){ doStartEdit(id); });
+  }
+
+  function doStartEdit(id){
     var s = subjectById(id);
     if(!s) return;
     editingId = id;
@@ -775,8 +936,7 @@
     document.getElementById('fGrade').value = s.grade;
     document.getElementById('fName').value = s.name;
     classTypeEl.value = s.classType;
-    renderClassLabels();
-    classLabelEl.value = s.classLabel;
+    renderClassLabels([s.classLabel]);
     document.getElementById('fProfessor').value = s.professor;
     document.getElementById('fWeeks').value = s.weeks;
     document.getElementById('fHours').value = s.hours;
@@ -812,18 +972,37 @@
     if(isNaN(hours) || hours < 1 || hours > PERIOD_COUNT){ showToast('시수는 1~' + PERIOD_COUNT + ' 사이로 입력해 주세요'); return null; }
     if(isNaN(credits) || credits < 0){ showToast('학점을 확인해 주세요'); return null; }
 
+    var labels = selectedLabels();
+    if(!labels.length){ showToast('반을 하나 이상 선택해 주세요'); return null; }
+
     return {
-      semester: document.getElementById('fSemester').value,
-      grade: document.getElementById('fGrade').value,
-      name: name,
-      classType: classTypeEl.value,
-      classLabel: classLabelEl.value,
-      professor: professor,
-      weeks: weeks,
-      hours: hours,
-      credits: credits,
-      content: document.getElementById('fContent').value.trim()
+      labels: labels,
+      base: {
+        semester: document.getElementById('fSemester').value,
+        grade: document.getElementById('fGrade').value,
+        name: name,
+        classType: classTypeEl.value,
+        professor: professor,
+        weeks: weeks,
+        hours: hours,
+        credits: credits,
+        content: document.getElementById('fContent').value.trim()
+      }
     };
+  }
+
+  // 같은 학기·학년·과목명·반형태·반이면 같은 수업으로 본다
+  function dupKey(s){
+    return [s.semester, s.grade, s.name, s.classType, s.classLabel].join('|');
+  }
+  function findDuplicate(candidate, exceptId){
+    var key = dupKey(candidate);
+    for(var i = 0; i < state.subjects.length; i++){
+      var s = state.subjects[i];
+      if(s.id === exceptId) continue;
+      if(dupKey(s) === key) return s;
+    }
+    return null;
   }
 
   // 수정 후 기존 배치가 규칙에 어긋나면(시수·주차·반·학년 변경 등) 배치를 해제한다
@@ -850,35 +1029,68 @@
   }
 
   document.getElementById('addSubjectBtn').addEventListener('click', function(){
-    var data = readForm();
-    if(!data) return;
+    requireUnlock(function(){
+      var data = readForm();
+      if(!data) return;
 
-    if(editingId){
-      var s = subjectById(editingId);
-      if(!s){ cancelEdit(); return; }
-      Object.keys(data).forEach(function(k){ s[k] = data[k]; });
-      var dropped = revalidatePlacement(editingId);
+      if(editingId){
+        var s = subjectById(editingId);
+        if(!s){ cancelEdit(); return; }
+        if(data.labels.length > 1){
+          showToast('수정할 때는 반을 하나만 선택해 주세요', true);
+          return;
+        }
+        var next = {};
+        Object.keys(data.base).forEach(function(k){ next[k] = data.base[k]; });
+        next.classLabel = data.labels[0];
+        var dup = findDuplicate(next, editingId);
+        if(dup){
+          showToast('이미 같은 수업이 있습니다 — ' + dup.name + ' ' + dup.classType + dup.classLabel + '반', true);
+          return;
+        }
+        Object.keys(next).forEach(function(k){ s[k] = next[k]; });
+        var dropped = revalidatePlacement(editingId);
+        saveState();
+        editingId = null;
+        setFormMode(false);
+        clearForm();
+        renderSubjectList();
+        renderTimetableTab();
+        showToast(dropped
+          ? '"' + s.name + '" 수정 완료 — 기존 배치는 해제했습니다 (' + dropped + ')'
+          : '"' + s.name + '" 과목을 수정했습니다', !!dropped);
+        return;
+      }
+
+      // 선택한 반 수만큼 각각 등록하되, 이미 있는 반은 건너뛴다
+      var added = [], skipped = [];
+      data.labels.forEach(function(label){
+        var cand = {};
+        Object.keys(data.base).forEach(function(k){ cand[k] = data.base[k]; });
+        cand.classLabel = label;
+        if(findDuplicate(cand, null)){ skipped.push(label); return; }
+        cand.id = newId('s');
+        state.subjects.push(cand);
+        added.push(label);
+      });
+
+      if(!added.length){
+        showToast('이미 등록된 수업입니다 (' + data.base.name + ' ' + skipped.join('·') + '반)', true);
+        return;
+      }
       saveState();
-      editingId = null;
-      setFormMode(false);
-      clearForm();
       renderSubjectList();
-      renderTimetableTab();
-      showToast(dropped
-        ? '"' + s.name + '" 수정 완료 — 기존 배치는 해제했습니다 (' + dropped + ')'
-        : '"' + s.name + '" 과목을 수정했습니다', !!dropped);
-      return;
-    }
-
-    data.id = newId('s');
-    state.subjects.push(data);
-    saveState();
-    renderSubjectList();
-    clearForm();
-    showToast('"' + data.name + '" 과목을 추가했습니다');
+      clearForm();
+      showToast('"' + data.base.name + '" ' + added.join('·') + '반 ' + added.length + '개를 등록했습니다' +
+        (skipped.length ? '\n(' + skipped.join('·') + '반은 이미 있어 건너뜀)' : ''), skipped.length > 0);
+    });
   });
 
   function removeSubject(id){
+    requireUnlock(function(){ doRemoveSubject(id); });
+  }
+
+  function doRemoveSubject(id){
     var s = subjectById(id);
     if(!s) return;
     if(!window.confirm('"' + s.name + '" 과목을 삭제할까요? 시간표에 배치된 내용도 함께 지워집니다.')) return;
@@ -1117,13 +1329,20 @@
         '<span class="board-range">' + startW + '~' + endW + '주 (' + board.weeks + '주)</span>';
       wrap.appendChild(head);
 
-      // 어느 칸이 차 있는지 미리 계산
-      var occupied = {};
+      // 요일×교시×칸 단위로 무엇이 차 있는지 계산.
+      // 블록의 왼쪽 위 칸에만 origin을 두고 나머지는 covered로 표시한다.
+      var cell = {};                       // key: 요일|교시|칸
       board.placements.forEach(function(p){
         var s = subjectById(p.subjectId);
         if(!s) return;
-        for(var k = 0; k < s.hours; k++){
-          occupied[p.day + '-' + (p.start + k)] = { placement: p, subject: s, offset: k, room: p.room };
+        var sp = spanOf(s);
+        for(var r = 0; r < s.hours; r++){
+          for(var c = sp[0]; c <= sp[1]; c++){
+            cell[p.day + '|' + (p.start + r) + '|' + c] = {
+              origin: (r === 0 && c === sp[0]),
+              subject: s, placement: p, span: sp
+            };
+          }
         }
       });
 
@@ -1132,85 +1351,141 @@
       var table = document.createElement('table');
       table.className = 'tt-table';
 
+      // 칸 너비 2:1:1:2 → 수업반 a·b·c가 모두 같은 폭, 학적반 A·B도 같은 폭.
+      // table-layout:fixed 는 표 전체 너비가 정해져야 col 너비를 그대로 지킨다.
+      var UNIT = 34, LEAD = [56, 84];
+      var dayWidth = COL_UNITS.reduce(function(n, u){ return n + u * UNIT; }, 0);
+      table.style.width = (LEAD[0] + LEAD[1] + DAYS.length * dayWidth) + 'px';
+
+      var colgroup = document.createElement('colgroup');
+      LEAD.forEach(function(w){
+        var col = document.createElement('col');
+        col.style.width = w + 'px';
+        colgroup.appendChild(col);
+      });
+      DAYS.forEach(function(){
+        COL_UNITS.forEach(function(u){
+          var col = document.createElement('col');
+          col.style.width = (u * UNIT) + 'px';
+          colgroup.appendChild(col);
+        });
+      });
+      table.appendChild(colgroup);
+
       var thead = document.createElement('thead');
-      thead.innerHTML = '<tr><th class="th-period">교시</th><th class="th-time">시간</th>' +
-        DAYS.map(function(d){ return '<th>' + d + '</th>'; }).join('') + '</tr>';
+      var hakLabels = LABELS['학적'], suLabels = LABELS['수업'];
+
+      var r1 = '<tr><th class="th-period" rowspan="3">교시</th><th class="th-time" rowspan="3">시간</th>' +
+        DAYS.map(function(d){
+          return '<th class="th-day day-edge" colspan="' + DAY_COL_COUNT + '">' + d + '</th>';
+        }).join('') + '</tr>';
+
+      var r2 = '<tr>' + DAYS.map(function(){
+        return hakLabels.map(function(L, li){
+          var sp = CLASS_SPANS['학적'][L];
+          return '<th class="th-hak ' + (li === 0 ? 'day-edge' : 'hak-edge') + '" colspan="' +
+            (sp[1] - sp[0] + 1) + '">' + L + '</th>';
+        }).join('');
+      }).join('') + '</tr>';
+
+      var r3 = '<tr>' + DAYS.map(function(){
+        return suLabels.map(function(L, li){
+          var sp = CLASS_SPANS['수업'][L];
+          return '<th class="th-su ' + (li === 0 ? 'day-edge' : '') + '" colspan="' +
+            (sp[1] - sp[0] + 1) + '">' + L + '</th>';
+        }).join('');
+      }).join('') + '</tr>';
+
+      thead.innerHTML = r1 + r2 + r3;
       table.appendChild(thead);
 
       var tbody = document.createElement('tbody');
       for(var i = 0; i < PERIOD_COUNT; i++){
-        var tr = document.createElement('tr');
-        var tdP = document.createElement('td');
-        tdP.className = 'period-cell';
-        tdP.innerHTML = (i + 1) + '<small>' + periodTime(i).split('~')[0] + '</small>';
-        tr.appendChild(tdP);
-        var tdT = document.createElement('td');
-        tdT.className = 'period-cell';
-        tdT.style.fontWeight = '500';
-        tdT.style.fontSize = '10.5px';
-        tdT.textContent = periodTime(i);
-        tr.appendChild(tdT);
+        (function(period){
+          var tr = document.createElement('tr');
+          var tdP = document.createElement('td');
+          tdP.className = 'period-cell';
+          tdP.innerHTML = (period + 1) + '<small>' + periodTime(period).split('~')[0] + '</small>';
+          tr.appendChild(tdP);
+          var tdT = document.createElement('td');
+          tdT.className = 'period-cell';
+          tdT.style.fontWeight = '500';
+          tdT.style.fontSize = '10px';
+          tdT.textContent = periodTime(period);
+          tr.appendChild(tdT);
 
-        DAYS.forEach(function(day){
-          var key = day + '-' + i;
-          var occ = occupied[key];
-          var td = document.createElement('td');
+          DAYS.forEach(function(day){
+            for(var c = 0; c < DAY_COL_COUNT; c++){
+              var info = cell[day + '|' + period + '|' + c];
 
-          if(occ && occ.offset > 0){
-            td.className = 'cell-cont';       // 앞 교시에서 이어지는 칸
-            tr.appendChild(td);
-            return;
-          }
-          if(occ){
-            td.rowSpan = occ.subject.hours;
-            td.className = 'slot occupied';
-            var box = document.createElement('div');
-            box.className = 'placed';
-            box.draggable = true;
-            box.innerHTML =
-              '<span class="p-name">' + escapeHtml(occ.subject.name) + '</span>' +
-              '<span class="p-meta">' + escapeHtml(occ.subject.professor) + '</span>' +
-              '<span class="p-meta">' + escapeHtml(occ.room || '-') + '</span>';
-            box.addEventListener('dragstart', function(e){
-              e.dataTransfer.setData('text/plain', occ.subject.id);
-              e.dataTransfer.effectAllowed = 'move';
-            });
-            var del = document.createElement('button');
-            del.type = 'button';
-            del.className = 'p-del';
-            del.title = '배치 해제';
-            del.textContent = '×';
-            (function(sid){
-              del.addEventListener('click', function(ev){
-                ev.stopPropagation();
-                unplace(sid);
-              });
-            })(occ.subject.id);
-            box.appendChild(del);
-            td.appendChild(box);
-            tr.appendChild(td);
-            return;
-          }
+              if(info && !info.origin) continue;          // 다른 블록이 덮은 칸은 td를 만들지 않음
 
-          var slot = document.createElement('div');
-          slot.className = 'slot';
-          td.appendChild(slot);
-          (function(d, periodIdx, bIdx){
-            slot.addEventListener('dragover', function(e){
-              e.preventDefault();
-              slot.classList.add('drag-over');
-            });
-            slot.addEventListener('dragleave', function(){ slot.classList.remove('drag-over'); });
-            slot.addEventListener('drop', function(e){
-              e.preventDefault();
-              slot.classList.remove('drag-over');
-              var sid = e.dataTransfer.getData('text/plain');
-              if(sid) place(sid, bIdx, d, periodIdx);
-            });
-          })(day, i, boardIdx);
-          tr.appendChild(td);
-        });
-        tbody.appendChild(tr);
+              var td = document.createElement('td');
+              if(c === 0) td.className = 'day-edge';
+              else if(c === CLASS_SPANS['학적']['B'][0]) td.className = 'hak-edge';
+
+              if(info){
+                var s = info.subject, sp = info.span;
+                td.rowSpan = s.hours;
+                td.colSpan = sp[1] - sp[0] + 1;
+                td.className += ' occupied';
+                var color = subjectColor(s);
+                var box = document.createElement('div');
+                box.className = 'placed';
+                box.draggable = true;
+                box.style.background = color.bg;
+                box.style.border = '1px solid ' + color.border;
+                box.innerHTML =
+                  '<span class="p-name">' + escapeHtml(s.name) + '</span>' +
+                  '<span class="p-meta">' + escapeHtml(s.professor) + '</span>' +
+                  '<span class="p-meta">' + escapeHtml(info.placement.room || '-') + '</span>' +
+                  (s.weeks < state.totalWeeks
+                    ? '<span class="p-weeks">' + boardStartWeek(currentGrade, boardIdx) + '~' +
+                      (boardStartWeek(currentGrade, boardIdx) + s.weeks - 1) + '주</span>'
+                    : '');
+                (function(sid){
+                  box.addEventListener('dragstart', function(e){
+                    e.dataTransfer.setData('text/plain', sid);
+                    e.dataTransfer.effectAllowed = 'move';
+                  });
+                  var del = document.createElement('button');
+                  del.type = 'button';
+                  del.className = 'p-del';
+                  del.title = '배치 해제';
+                  del.textContent = '×';
+                  del.addEventListener('click', function(ev){
+                    ev.stopPropagation();
+                    unplace(sid);
+                  });
+                  box.appendChild(del);
+                })(s.id);
+                td.appendChild(box);
+                tr.appendChild(td);
+                c = sp[1];                                 // 덮은 칸만큼 건너뛴다
+                continue;
+              }
+
+              var slot = document.createElement('div');
+              slot.className = 'slot';
+              td.appendChild(slot);
+              (function(d, bIdx){
+                slot.addEventListener('dragover', function(e){
+                  e.preventDefault();
+                  slot.classList.add('drag-over');
+                });
+                slot.addEventListener('dragleave', function(){ slot.classList.remove('drag-over'); });
+                slot.addEventListener('drop', function(e){
+                  e.preventDefault();
+                  slot.classList.remove('drag-over');
+                  var sid = e.dataTransfer.getData('text/plain');
+                  if(sid) place(sid, bIdx, d, period);
+                });
+              })(day, boardIdx);
+              tr.appendChild(td);
+            }
+          });
+          tbody.appendChild(tr);
+        })(i);
       }
       table.appendChild(tbody);
       scroll.appendChild(table);
@@ -1224,6 +1499,10 @@
   var roomPickOverlay = document.getElementById('roomPickOverlay');
 
   function place(subjectId, boardIdx, day, start){
+    requireUnlock(function(){ doPlace(subjectId, boardIdx, day, start); });
+  }
+
+  function doPlace(subjectId, boardIdx, day, start){
     var subject = subjectById(subjectId);
     if(!subject) return;
     if(subject.grade !== currentGrade){
@@ -1304,6 +1583,10 @@
   }
 
   function unplace(subjectId){
+    requireUnlock(function(){ doUnplace(subjectId); });
+  }
+
+  function doUnplace(subjectId){
     var found = findPlacement(subjectId);
     if(!found) return;
     var board = state.boardsByGrade[found.grade][found.boardIdx];
@@ -1356,30 +1639,71 @@
     return rows;
   }
 
-  function boardSheetRows(grade, boardIdx){
+  /* 시트도 화면과 같은 구조 — 요일마다 4칸, 머리글 3줄(요일 / 학적반 / 수업반) */
+  function boardSheet(grade, boardIdx){
     var board = state.boardsByGrade[grade][boardIdx];
-    var occupied = {};
+    var hakLabels = LABELS['학적'], suLabels = LABELS['수업'];
+    var COL0 = 2;                                        // 교시, 시간 다음부터 요일 칸
+    var rows = [], merges = [];
+
+    function colOf(dayIdx, c){ return COL0 + dayIdx * DAY_COL_COUNT + c; }
+
+    var head1 = ['교시', '시간'], head2 = ['', ''], head3 = ['', ''];
+    DAYS.forEach(function(day, di){
+      for(var c = 0; c < DAY_COL_COUNT; c++){ head1.push(c === 0 ? day : ''); }
+      merges.push({ s: { r: 0, c: colOf(di, 0) }, e: { r: 0, c: colOf(di, DAY_COL_COUNT - 1) } });
+      hakLabels.forEach(function(L){
+        var sp = CLASS_SPANS['학적'][L];
+        for(var c = sp[0]; c <= sp[1]; c++) head2.push(c === sp[0] ? L : '');
+        merges.push({ s: { r: 1, c: colOf(di, sp[0]) }, e: { r: 1, c: colOf(di, sp[1]) } });
+      });
+      suLabels.forEach(function(L){
+        var sp = CLASS_SPANS['수업'][L];
+        for(var c = sp[0]; c <= sp[1]; c++) head3.push(c === sp[0] ? L : '');
+        merges.push({ s: { r: 2, c: colOf(di, sp[0]) }, e: { r: 2, c: colOf(di, sp[1]) } });
+      });
+    });
+    merges.push({ s: { r: 0, c: 0 }, e: { r: 2, c: 0 } });
+    merges.push({ s: { r: 0, c: 1 }, e: { r: 2, c: 1 } });
+    rows.push(head1, head2, head3);
+
+    var origin = {}, covered = {};
     board.placements.forEach(function(p){
       var s = subjectById(p.subjectId);
       if(!s) return;
-      for(var k = 0; k < s.hours; k++){
-        occupied[p.day + '-' + (p.start + k)] = { subject: s, offset: k, room: p.room };
+      var sp = spanOf(s);
+      for(var r = 0; r < s.hours; r++){
+        for(var c = sp[0]; c <= sp[1]; c++){
+          var key = p.day + '|' + (p.start + r) + '|' + c;
+          if(r === 0 && c === sp[0]) origin[key] = { subject: s, placement: p, span: sp };
+          else covered[key] = true;
+        }
       }
     });
-    var rows = [['교시', '시간'].concat(DAYS)];
+
+    var startWeek = boardStartWeek(grade, boardIdx);
     for(var i = 0; i < PERIOD_COUNT; i++){
       var row = [periodLabel(i), periodTime(i)];
-      DAYS.forEach(function(day){
-        var occ = occupied[day + '-' + i];
-        if(!occ){ row.push(''); return; }
-        if(occ.offset > 0){ row.push('〃'); return; }
-        var s = occ.subject;
-        row.push(s.name + ' · ' + s.professor + ' · ' + (occ.room || '-') +
-          ' (' + s.classType + s.classLabel + ')');
+      DAYS.forEach(function(day, di){
+        for(var c = 0; c < DAY_COL_COUNT; c++){
+          var key = day + '|' + i + '|' + c;
+          var o = origin[key];
+          if(o){
+            var s = o.subject;
+            row.push(s.name + '\n' + s.professor + '\n' + (o.placement.room || '-') +
+              (s.weeks < state.totalWeeks ? '\n' + startWeek + '~' + (startWeek + s.weeks - 1) + '주' : ''));
+            merges.push({
+              s: { r: 3 + i, c: colOf(di, o.span[0]) },
+              e: { r: 3 + i + s.hours - 1, c: colOf(di, o.span[1]) }
+            });
+          } else {
+            row.push('');
+          }
+        }
       });
       rows.push(row);
     }
-    return rows;
+    return { rows: rows, merges: merges };
   }
 
   function autoCols(rows){
@@ -1406,9 +1730,12 @@
             if(!board.placements.length) return;     // 빈 구간은 시트로 만들지 않음
             any = true;
             var sw = boardStartWeek(g, bi);
-            var rows = boardSheetRows(g, bi);
-            var ws = XLSX.utils.aoa_to_sheet(rows);
-            ws['!cols'] = autoCols(rows);
+            var sheet = boardSheet(g, bi);
+            var ws = XLSX.utils.aoa_to_sheet(sheet.rows);
+            ws['!merges'] = sheet.merges;
+            var w = [{ wch: 7 }, { wch: 12 }];
+            DAYS.forEach(function(){ COL_UNITS.forEach(function(u){ w.push({ wch: u * 7 }); }); });
+            ws['!cols'] = w;
             var nm = g + '학년 ' + (bi + 1) + '구간(' + sw + '-' + (sw + board.weeks - 1) + '주)';
             XLSX.utils.book_append_sheet(wb, ws, nm.slice(0, 31));
           });
@@ -1435,6 +1762,7 @@
   /* ---------- 초기 렌더 ---------- */
   renderClassLabels();
   renderRooms();
+  updateLockUi();
   GRADES.forEach(reflowBoards);
   renderSubjectList();
 })();
