@@ -183,13 +183,19 @@
   .room-add{display:flex;gap:8px;align-items:center;margin-top:12px}
   .room-add input{width:130px}
 
-  .tt-body{display:grid;grid-template-columns:230px 1fr;gap:20px;align-items:start}
+  /* 시간표가 넓어서 옆에 두면 눌리므로, 미배치 목록을 위에 깔고 시간표를 아래에 둔다 */
+  .tt-body{display:block}
   .pool-panel{
     border:1px solid var(--stroke);border-radius:14px;background:rgba(255,255,255,.03);
-    padding:16px;position:sticky;top:16px;
+    padding:16px;margin-bottom:22px;
   }
   .pool-panel h3{font-size:13px;color:#d3d7e4;margin-bottom:12px;font-weight:650}
-  .pool-list{display:flex;flex-direction:column;gap:8px;max-height:640px;overflow-y:auto}
+  .pool-list{display:flex;flex-direction:row;flex-wrap:wrap;gap:8px;max-height:220px;overflow-y:auto}
+  .pool-list .subject-chip{width:190px;flex:0 0 auto}
+  .pool-list .empty-state{width:100%}
+
+  /* 시간표 탭에서는 창 너비를 그대로 쓰도록 폭 제한을 푼다 */
+  body.tt-wide .wrap{max-width:none}
 
   .subject-chip{
     border:1px solid var(--stroke);background:rgba(255,255,255,.06);
@@ -867,6 +873,7 @@
       btn.classList.add('active');
       document.querySelectorAll('.tab-view').forEach(function(v){ v.classList.remove('active'); });
       document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      document.body.classList.toggle('tt-wide', btn.dataset.tab === 'timetable');
       if(btn.dataset.tab === 'timetable') renderTimetableTab();
     });
   });
@@ -908,6 +915,7 @@
     document.getElementById('fWeeks').value = 15;
     document.getElementById('fHours').value = 3;
     document.getElementById('fCredits').value = 3;
+    renderClassLabels();          // 선택했던 반 체크도 함께 해제
   }
 
   document.getElementById('formResetBtn').addEventListener('click', function(){
@@ -966,11 +974,14 @@
     var hours = parseInt(document.getElementById('fHours').value, 10);
     var credits = parseFloat(document.getElementById('fCredits').value);
 
+    // 모든 항목이 채워져야 저장한다
+    var content = document.getElementById('fContent').value.trim();
     if(!name){ showToast('과목명을 입력해 주세요'); return null; }
     if(!professor){ showToast('교수명을 입력해 주세요'); return null; }
     if(isNaN(weeks) || weeks < 1 || weeks > 16){ showToast('주차는 1~16 사이로 입력해 주세요'); return null; }
     if(isNaN(hours) || hours < 1 || hours > PERIOD_COUNT){ showToast('시수는 1~' + PERIOD_COUNT + ' 사이로 입력해 주세요'); return null; }
-    if(isNaN(credits) || credits < 0){ showToast('학점을 확인해 주세요'); return null; }
+    if(isNaN(credits) || credits <= 0){ showToast('학점을 입력해 주세요'); return null; }
+    if(!content){ showToast('교육내용을 입력해 주세요'); return null; }
 
     var labels = selectedLabels();
     if(!labels.length){ showToast('반을 하나 이상 선택해 주세요'); return null; }
@@ -986,7 +997,7 @@
         weeks: weeks,
         hours: hours,
         credits: credits,
-        content: document.getElementById('fContent').value.trim()
+        content: content
       }
     };
   }
@@ -1415,14 +1426,35 @@
           tr.appendChild(tdT);
 
           DAYS.forEach(function(day){
-            for(var c = 0; c < DAY_COL_COUNT; c++){
-              var info = cell[day + '|' + period + '|' + c];
+            /* 빈 칸은 수업반 단위로 묶어서 하나의 셀로 만든다.
+             * 그래야 b반처럼 두 칸을 쓰는 반의 빈 영역도 a·c와 같은 크기의
+             * 셀 하나가 되어, 배치된 수업 객체와 크기가 맞고 드롭도 쉬워진다.
+             * (학적반 블록이 일부를 덮고 있으면 남은 칸만 따로 셀이 된다) */
+            var pieces = [];
+            LABELS['수업'].forEach(function(L){
+              var g = CLASS_SPANS['수업'][L];
+              var run = null;
+              for(var c = g[0]; c <= g[1]; c++){
+                var info = cell[day + '|' + period + '|' + c];
+                if(info){
+                  if(run){ pieces.push(run); run = null; }
+                  if(info.origin) pieces.push({ from: info.span[0], to: info.span[1], info: info });
+                } else {
+                  if(run) run.to = c;
+                  else run = { from: c, to: c, info: null };
+                }
+              }
+              if(run) pieces.push(run);
+            });
 
-              if(info && !info.origin) continue;          // 다른 블록이 덮은 칸은 td를 만들지 않음
+            pieces.forEach(function(piece){
+              var c = piece.from;
+              var info = piece.info;
 
               var td = document.createElement('td');
               if(c === 0) td.className = 'day-edge';
               else if(c === CLASS_SPANS['학적']['B'][0]) td.className = 'hak-edge';
+              if(!info) td.colSpan = piece.to - piece.from + 1;
 
               if(info){
                 var s = info.subject, sp = info.span;
@@ -1461,8 +1493,7 @@
                 })(s.id);
                 td.appendChild(box);
                 tr.appendChild(td);
-                c = sp[1];                                 // 덮은 칸만큼 건너뛴다
-                continue;
+                return;
               }
 
               var slot = document.createElement('div');
@@ -1482,7 +1513,7 @@
                 });
               })(day, boardIdx);
               tr.appendChild(td);
-            }
+            });
           });
           tbody.appendChild(tr);
         })(i);
