@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" type="image/png" href="img/favicon.png">
 <title>시간표 생성기 · 연성대학교 게임콘텐츠과</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root{
     --bg:#07070c;
@@ -50,14 +51,207 @@
     background:linear-gradient(105deg,var(--a2) 0%,var(--a1) 55%,var(--a3) 100%);
     -webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;
   }
-  .lede{color:var(--muted);max-width:680px;font-size:1rem}
+  .lede{color:var(--muted);max-width:720px;font-size:1rem}
+
+  .top-tabs{display:flex;gap:8px;margin:28px 0 0}
+  .top-tab-btn{
+    font-family:inherit;font-size:14px;font-weight:650;color:var(--muted);
+    border:1px solid var(--stroke);background:rgba(255,255,255,.03);
+    padding:12px 22px;border-radius:12px 12px 0 0;cursor:pointer;transition:.2s;
+    border-bottom:none;
+  }
+  .top-tab-btn:hover{color:var(--text)}
+  .top-tab-btn.active{
+    color:#fff;background:var(--surface);border-color:var(--stroke);
+    box-shadow:inset 0 2px 0 var(--a1);
+  }
 
   main.app-main{padding-bottom:80px}
   .panel{
     border:1px solid var(--stroke);background:var(--surface);
-    border-radius:16px;padding:28px;
+    border-radius:0 16px 16px 16px;padding:28px;
   }
-  .empty-state{color:var(--dim);font-size:13.5px;padding:48px 28px;text-align:center}
+  .tab-view{display:none}
+  .tab-view.active{display:block}
+
+  .section-head{
+    display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;
+    margin-bottom:14px;
+  }
+  .section-head h2{font-size:1.05rem;font-weight:750}
+  .section-note{color:var(--muted);font-size:13px}
+
+  .apply-btn{
+    font-family:inherit;font-size:13px;font-weight:700;color:#0b0b12;
+    background:linear-gradient(135deg,var(--a2),var(--a1));border:none;
+    border-radius:9px;padding:10px 18px;cursor:pointer;
+  }
+  .ghost-btn{
+    font-family:inherit;font-size:13px;font-weight:650;color:var(--text);
+    border:1px solid var(--stroke);background:rgba(255,255,255,.04);
+    padding:9px 16px;border-radius:10px;cursor:pointer;transition:.2s;
+  }
+  .ghost-btn:hover{border-color:rgba(124,92,255,.5)}
+  .danger-btn:hover{border-color:rgba(255,92,157,.5);color:#ff9ec4}
+
+  /* ---------- 입력 폼 ---------- */
+  .form-card{
+    border:1px solid var(--stroke);border-radius:16px;padding:22px;
+    background:rgba(255,255,255,.03);
+  }
+  .form-grid{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;
+  }
+  .field{display:flex;flex-direction:column;gap:6px}
+  .field label{font-size:12.5px;color:var(--muted);font-weight:650}
+  .field-wide{grid-column:1/-1}
+  .input-field{
+    font-family:inherit;font-size:14px;color:var(--text);width:100%;
+    background:rgba(255,255,255,.05);border:1px solid var(--stroke);
+    border-radius:10px;padding:9px 12px;transition:border-color .2s;
+  }
+  .input-field:focus{outline:none;border-color:rgba(124,92,255,.6)}
+  select.input-field option{background:#16161f;color:var(--text)}
+  textarea.input-field{resize:vertical;min-height:70px}
+  .form-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+
+  /* ---------- 리스트 ---------- */
+  .table-wrap{border:1px solid var(--stroke);border-radius:14px;overflow:hidden;background:#121218;margin-bottom:26px}
+  .table-scroll{max-height:420px;overflow:auto}
+  table.data-table{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap}
+  table.data-table thead th{
+    text-align:left;background:#1c1c26;color:#d3d7e4;
+    font-weight:650;padding:10px 12px;border-bottom:1px solid var(--stroke);
+    position:sticky;top:0;z-index:1;
+  }
+  table.data-table tbody td{padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.05);color:var(--muted);background:#121218}
+  table.data-table tbody tr:last-child td{border-bottom:none}
+  table.data-table tbody tr:hover td{background:#191922}
+  .td-content{max-width:220px;overflow:hidden;text-overflow:ellipsis}
+  .row-del-btn{
+    border:1px solid var(--stroke);background:rgba(255,255,255,.05);color:var(--dim);
+    border-radius:8px;font-size:12px;padding:4px 10px;cursor:pointer;font-family:inherit;
+  }
+  .row-del-btn:hover{color:#ff9ec4;border-color:rgba(255,92,157,.5)}
+  .empty-state{color:var(--dim);font-size:13.5px;padding:36px 24px;text-align:center}
+  .badge{
+    display:inline-block;border:1px solid var(--stroke);background:rgba(255,255,255,.05);
+    border-radius:100px;padding:2px 9px;font-size:11.5px;font-weight:650;color:#d3d7e4;
+  }
+  .badge-placed{border-color:rgba(61,220,151,.4);color:#8ef0c8}
+
+  /* ---------- 시간표 탭 ---------- */
+  .grade-filter{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+  .grade-chip{
+    font-family:inherit;font-size:13px;font-weight:650;color:var(--muted);
+    border:1px solid var(--stroke);background:rgba(255,255,255,.03);
+    padding:8px 16px;border-radius:100px;cursor:pointer;transition:.2s;
+  }
+  .grade-chip:hover{color:var(--text)}
+  .grade-chip.active{
+    color:#0b0b12;border-color:transparent;font-weight:700;
+    background:linear-gradient(135deg,var(--a2),var(--a1));
+  }
+
+  .tt-toolbar{
+    display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;
+    margin-bottom:18px;
+  }
+  .weeks-field{display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--muted)}
+  .weeks-field input{
+    width:70px;font-family:inherit;font-size:14px;color:var(--text);text-align:center;
+    background:rgba(255,255,255,.05);border:1px solid var(--stroke);
+    border-radius:9px;padding:8px 6px;
+  }
+  .weeks-field input:focus{outline:none;border-color:rgba(124,92,255,.6)}
+
+  .room-bar{
+    border:1px solid var(--stroke);border-radius:12px;background:rgba(255,255,255,.03);
+    padding:14px 16px;margin-bottom:20px;
+  }
+  .room-bar h3{font-size:12.5px;color:var(--muted);font-weight:650;margin-bottom:10px}
+  .room-list{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .room-tag{
+    display:inline-flex;align-items:center;gap:7px;
+    border:1px solid var(--stroke);background:rgba(255,255,255,.05);
+    border-radius:100px;padding:5px 12px;font-size:12.5px;font-weight:650;color:#d3d7e4;
+  }
+  .room-tag button{
+    border:none;background:none;color:var(--dim);cursor:pointer;font-size:13px;line-height:1;padding:0;
+  }
+  .room-tag button:hover{color:#ff9ec4}
+  .room-add{display:flex;gap:8px;align-items:center;margin-top:12px}
+  .room-add input{width:130px}
+
+  .tt-body{display:grid;grid-template-columns:230px 1fr;gap:20px;align-items:start}
+  .pool-panel{
+    border:1px solid var(--stroke);border-radius:14px;background:rgba(255,255,255,.03);
+    padding:16px;position:sticky;top:16px;
+  }
+  .pool-panel h3{font-size:13px;color:#d3d7e4;margin-bottom:12px;font-weight:650}
+  .pool-list{display:flex;flex-direction:column;gap:8px;max-height:640px;overflow-y:auto}
+
+  .subject-chip{
+    border:1px solid var(--stroke);background:rgba(255,255,255,.06);
+    border-radius:10px;padding:9px 11px;cursor:grab;user-select:none;
+    display:flex;flex-direction:column;gap:2px;transition:.15s;
+  }
+  .subject-chip:active{cursor:grabbing}
+  .subject-chip:hover{border-color:rgba(124,92,255,.5)}
+  .chip-name{font-size:12.5px;font-weight:700;color:#e7e8ee}
+  .chip-meta{font-size:11.5px;color:var(--muted)}
+
+  .board{border:1px solid var(--stroke);border-radius:14px;overflow:hidden;margin-bottom:20px;background:rgba(255,255,255,.02)}
+  .board-head{
+    padding:12px 16px;font-weight:700;font-size:14px;
+    background:linear-gradient(135deg,rgba(124,92,255,.18),rgba(34,211,238,.1));
+    border-bottom:1px solid var(--stroke);
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  }
+  .board-range{color:var(--muted);font-weight:650;font-size:12.5px}
+  .board-scroll{overflow-x:auto}
+  table.tt-table{width:100%;border-collapse:collapse;font-size:12px;min-width:620px}
+  table.tt-table th{
+    background:#1c1c26;color:#d3d7e4;font-weight:650;padding:8px 6px;
+    border:1px solid rgba(255,255,255,.07);
+  }
+  table.tt-table td{
+    border:1px solid rgba(255,255,255,.07);padding:0;height:52px;vertical-align:top;
+    background:#121218;
+  }
+  .th-period{width:64px}
+  .th-time{width:92px;font-weight:500;color:var(--dim);font-size:11px}
+  .period-cell{background:#17171f;color:var(--muted);text-align:center;font-weight:650}
+  .period-cell small{display:block;color:var(--dim);font-weight:500;font-size:10.5px}
+  .slot{height:100%;min-height:52px;padding:3px;transition:.12s}
+  .slot.drag-over{background:rgba(124,92,255,.16);box-shadow:inset 0 0 0 2px var(--a1)}
+  .slot.occupied{padding:0}
+  .placed{
+    height:100%;border-radius:8px;padding:6px 8px;
+    background:linear-gradient(135deg,rgba(124,92,255,.32),rgba(34,211,238,.2));
+    border:1px solid rgba(124,92,255,.45);
+    display:flex;flex-direction:column;gap:1px;position:relative;cursor:grab;
+  }
+  .placed:active{cursor:grabbing}
+  .placed .p-name{font-size:12px;font-weight:700;color:#fff;padding-right:14px}
+  .placed .p-meta{font-size:11px;color:#cfd3e6}
+  .placed .p-del{
+    position:absolute;top:3px;right:4px;border:none;background:none;
+    color:#cfd3e6;font-size:13px;line-height:1;cursor:pointer;padding:0 2px;
+  }
+  .placed .p-del:hover{color:#ff9ec4}
+  .cell-cont{background:#15151d}
+
+  .toast{
+    position:fixed;left:50%;bottom:28px;transform:translate(-50%,20px);
+    background:#16161f;border:1px solid rgba(124,92,255,.4);color:var(--text);
+    font-size:13.5px;font-weight:600;padding:12px 20px;border-radius:14px;
+    box-shadow:0 12px 30px rgba(0,0,0,.4);
+    opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;
+    z-index:80;max-width:min(90vw,460px);text-align:center;white-space:pre-line;
+  }
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+  .toast.warn{border-color:rgba(255,92,157,.55)}
 
   footer.wrap{
     padding:80px 24px 120px;border-top:1px solid var(--stroke);
@@ -65,9 +259,7 @@
     display:flex;flex-direction:column;gap:28px;
     position:relative;z-index:1;
   }
-  .footer-main{
-    display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap;
-  }
+  .footer-main{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap}
   .footer-left{display:flex;flex-direction:column;gap:6px}
   .footer-title{color:var(--muted);font-weight:650}
   .footer-note{font-size:.8rem}
@@ -77,6 +269,11 @@
     font-size:.8rem;line-height:1.7;
   }
 
+  @media (max-width:860px){
+    .tt-body{grid-template-columns:1fr}
+    .pool-panel{position:static}
+    .pool-list{max-height:260px}
+  }
   @media (max-width:560px){
     header.app-header{padding:48px 0 20px}
     .panel{padding:18px}
@@ -89,12 +286,158 @@
 <header class="wrap app-header">
   <div class="eyebrow"><span class="dot"></span>연성대학교 · 게임콘텐츠과</div>
   <h1>시간표 <span class="grad">생성기</span></h1>
-  <p class="lede">준비 중입니다.</p>
+  <p class="lede">과목을 등록하고 학년별 시간표에 끌어다 배치합니다. 강의실·반·교수 시간이 겹치면 배치 단계에서 걸러 주고, 완성된 시간표와 과목 목록을 엑셀로 내려받을 수 있습니다.</p>
+
+  <div class="top-tabs">
+    <button type="button" class="top-tab-btn active" data-tab="input">과목 입력</button>
+    <button type="button" class="top-tab-btn" data-tab="timetable">시간표 배치</button>
+  </div>
 </header>
 
 <main class="wrap app-main">
   <section class="panel">
-    <div class="empty-state">기능은 아직 작업 전입니다.</div>
+
+    <!-- ================= 탭 1 : 과목 입력 ================= -->
+    <div class="tab-view active" id="tab-input">
+      <div class="section-head">
+        <h2>등록된 과목 <span class="badge" id="subjectCount">0</span></h2>
+        <button type="button" class="ghost-btn" id="exportSubjectsBtn">내보내기</button>
+      </div>
+
+      <div class="table-wrap" id="subjectTableWrap" style="display:none">
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>학기</th><th>학년</th><th>과목명</th><th>반</th><th>교수명</th>
+                <th>주차</th><th>시수</th><th>학점</th><th>강의실</th><th>요일</th>
+                <th>배치</th><th>교육내용</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="subjectTbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="empty-state" id="subjectEmptyState">아직 등록된 과목이 없습니다. 아래에서 추가해 주세요.</div>
+
+      <div class="form-card" style="margin-top:24px">
+        <div class="section-head"><h2 style="font-size:.95rem">과목 추가</h2></div>
+        <div class="form-grid">
+          <div class="field">
+            <label for="fSemester">학기</label>
+            <select id="fSemester" class="input-field">
+              <option value="1">1학기</option>
+              <option value="2">2학기</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="fGrade">학년</label>
+            <select id="fGrade" class="input-field">
+              <option value="1">1학년</option>
+              <option value="2">2학년</option>
+              <option value="3">3학년</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="fName">과목명</label>
+            <input type="text" id="fName" class="input-field" placeholder="예: 3D게임프로그래밍">
+          </div>
+          <div class="field">
+            <label for="fClassType">반 형태</label>
+            <select id="fClassType" class="input-field">
+              <option value="학적">학적반 (A, B)</option>
+              <option value="수업">수업반 (a, b, c)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="fClassLabel">반</label>
+            <select id="fClassLabel" class="input-field"></select>
+          </div>
+          <div class="field">
+            <label for="fProfessor">교수명</label>
+            <input type="text" id="fProfessor" class="input-field" placeholder="예: 김강호">
+          </div>
+          <div class="field">
+            <label for="fWeeks">주차 (1~16)</label>
+            <input type="number" id="fWeeks" class="input-field" min="1" max="16" value="15">
+          </div>
+          <div class="field">
+            <label for="fHours">시수 (연속 교시)</label>
+            <input type="number" id="fHours" class="input-field" min="1" max="9" value="3">
+          </div>
+          <div class="field">
+            <label for="fCredits">학점</label>
+            <input type="number" id="fCredits" class="input-field" min="0" max="9" step="0.5" value="3">
+          </div>
+          <div class="field">
+            <label for="fRoom">강의실</label>
+            <select id="fRoom" class="input-field"></select>
+          </div>
+          <div class="field">
+            <label for="fDay">요일</label>
+            <select id="fDay" class="input-field">
+              <option value="월">월요일</option>
+              <option value="화">화요일</option>
+              <option value="수">수요일</option>
+              <option value="목">목요일</option>
+              <option value="금">금요일</option>
+            </select>
+          </div>
+          <div class="field field-wide">
+            <label for="fContent">교육내용</label>
+            <textarea id="fContent" class="input-field" placeholder="주차별 교육내용이나 비고를 입력하세요"></textarea>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="ghost-btn" id="formResetBtn">입력 초기화</button>
+          <button type="button" class="apply-btn" id="addSubjectBtn">과목 추가</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= 탭 2 : 시간표 배치 ================= -->
+    <div class="tab-view" id="tab-timetable">
+      <div id="ttEmptyState" class="empty-state">먼저 "과목 입력" 탭에서 과목을 등록해 주세요.</div>
+
+      <div id="ttContent" style="display:none">
+        <div class="grade-filter" id="ttGradeFilter">
+          <button type="button" class="grade-chip active" data-grade="1">1학년</button>
+          <button type="button" class="grade-chip" data-grade="2">2학년</button>
+          <button type="button" class="grade-chip" data-grade="3">3학년</button>
+        </div>
+
+        <div class="room-bar">
+          <h3>사용 가능한 강의실</h3>
+          <div class="room-list" id="roomList"></div>
+          <div class="room-add">
+            <input type="text" id="newRoomInput" class="input-field" placeholder="예: 902" maxlength="12">
+            <button type="button" class="ghost-btn" id="addRoomBtn">강의실 추가</button>
+          </div>
+        </div>
+
+        <div class="tt-toolbar">
+          <div class="weeks-field">
+            <span>총 운영 주차</span>
+            <input type="number" id="totalWeeksInput" min="1" max="20" value="15">
+            <span>주 (최대 20)</span>
+            <button type="button" class="apply-btn" id="applyWeeksBtn">적용</button>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button type="button" class="ghost-btn" id="exportTimetableBtn">내보내기</button>
+            <button type="button" class="ghost-btn danger-btn" id="clearGradeBtn">이 학년 배치 초기화</button>
+          </div>
+        </div>
+
+        <div class="tt-body">
+          <div class="pool-panel">
+            <h3>미배치 과목 (<span id="poolCount">0</span>)</h3>
+            <div class="pool-list" id="poolList"></div>
+          </div>
+          <div id="boardArea"></div>
+        </div>
+      </div>
+    </div>
+
   </section>
 </main>
 
@@ -110,5 +453,816 @@
     <span>본 웹앱의 저작권은 연성대학교 게임콘텐츠과 김강호 교수에게 있으며, 무단 복제·배포 및 상업적 이용을 금합니다.</span>
   </div>
 </footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  var DAYS = ['월', '화', '수', '목', '금'];
+  var PERIOD_COUNT = 9;             // 9:30 시작, 50분 수업 + 10분 휴식
+  var DAY_START_MIN = 9 * 60 + 30;
+  var GRADES = ['1', '2', '3'];
+  var DEFAULT_ROOMS = ['801', '805', '808', '901', '905-1', '905-2'];
+  var LABELS = { '학적': ['A', 'B'], '수업': ['a', 'b', 'c'] };
+  var STORAGE_KEY = 'timetableGenState_v1';
+
+  /* ============================================================
+   * 교시 시간 — 1교시 09:30~10:20, 이후 60분 간격(50분 수업 + 10분 휴식).
+   * 휴식 시간은 표에 따로 표기하지 않는다.
+   * ============================================================ */
+  function pad2(n){ return (n < 10 ? '0' : '') + n; }
+  function fmtMin(m){ return pad2(Math.floor(m / 60)) + ':' + pad2(m % 60); }
+  function periodStart(i){ return DAY_START_MIN + i * 60; }
+  function periodLabel(i){ return (i + 1) + '교시'; }
+  function periodTime(i){ return fmtMin(periodStart(i)) + '~' + fmtMin(periodStart(i) + 50); }
+
+  function escapeHtml(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(ch){
+      return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch];
+    });
+  }
+
+  var toast = document.getElementById('toast');
+  var toastTimer = null;
+  function showToast(msg, isWarn){
+    toast.textContent = msg;
+    toast.classList.toggle('warn', !!isWarn);
+    toast.classList.add('show');
+    if(toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toast.classList.remove('show'); }, isWarn ? 4200 : 2400);
+  }
+
+  /* ============================================================
+   * 상태
+   *   subjects : 등록된 과목
+   *   boardsByGrade[학년] : 구간(강의표) 배열. 구간마다 배치 목록을 가진다.
+   *     board = { id, weeks, placements:[{subjectId, day, start}] }
+   * ============================================================ */
+  function emptyState(){
+    return {
+      subjects: [],
+      rooms: DEFAULT_ROOMS.slice(),
+      totalWeeks: 15,
+      boardsByGrade: { '1': [], '2': [], '3': [] }
+    };
+  }
+
+  function loadState(){
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        var s = JSON.parse(raw);
+        if(!s.subjects) s.subjects = [];
+        if(!s.rooms || !s.rooms.length) s.rooms = DEFAULT_ROOMS.slice();
+        if(!s.totalWeeks) s.totalWeeks = 15;
+        if(!s.boardsByGrade) s.boardsByGrade = { '1': [], '2': [], '3': [] };
+        GRADES.forEach(function(g){ if(!s.boardsByGrade[g]) s.boardsByGrade[g] = []; });
+        return s;
+      }
+    } catch(e){}
+    return emptyState();
+  }
+  function saveState(){
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e){}
+  }
+
+  var state = loadState();
+  var currentGrade = '1';
+  var nextId = 1;
+  state.subjects.forEach(function(s){
+    var n = parseInt(String(s.id).replace('s', ''), 10);
+    if(!isNaN(n) && n >= nextId) nextId = n + 1;
+  });
+  function newId(prefix){ return prefix + (nextId++); }
+
+  function subjectById(id){
+    for(var i = 0; i < state.subjects.length; i++){
+      if(state.subjects[i].id === id) return state.subjects[i];
+    }
+    return null;
+  }
+
+  /* ============================================================
+   * 구간(강의표) 재정렬
+   *   구간의 주차 = 그 구간에 배치된 과목 중 가장 긴 주차.
+   *   합계가 총 주차보다 적으면 남은 주차만큼 빈 구간을 자동으로 뒤에 붙인다.
+   * ============================================================ */
+  function newBoard(){
+    return { id: newId('b'), weeks: 0, placements: [] };
+  }
+
+  function boardMaxWeeks(board){
+    var mx = 0;
+    board.placements.forEach(function(p){
+      var s = subjectById(p.subjectId);
+      if(s && s.weeks > mx) mx = s.weeks;
+    });
+    return mx;
+  }
+
+  function reflowBoards(grade){
+    var boards = state.boardsByGrade[grade] || [];
+    var total = state.totalWeeks;
+    var used = 0;
+    var out = [];
+
+    for(var i = 0; i < boards.length; i++){
+      var remaining = total - used;
+      if(remaining <= 0) break;              // 총 주차를 넘는 구간은 버린다
+      var b = boards[i];
+      var mx = boardMaxWeeks(b);
+      b.weeks = mx > 0 ? Math.min(mx, remaining) : remaining;
+      used += b.weeks;
+      out.push(b);
+    }
+    if(!out.length){
+      var first = newBoard();
+      first.weeks = total;
+      out.push(first);
+    } else if(used < total){
+      var extra = newBoard();               // 남은 주차 → 추가 강의표 자동 생성
+      extra.weeks = total - used;
+      out.push(extra);
+    }
+    state.boardsByGrade[grade] = out;
+  }
+
+  function boardStartWeek(grade, idx){
+    var boards = state.boardsByGrade[grade];
+    var w = 1;
+    for(var i = 0; i < idx; i++) w += boards[i].weeks;
+    return w;
+  }
+
+  // 이 구간에 넣을 수 있는 최대 주차 (앞 구간 + 뒤쪽 사용 중인 구간을 뺀 값)
+  function boardCapacity(grade, idx){
+    var boards = state.boardsByGrade[grade];
+    var before = 0, after = 0;
+    for(var i = 0; i < idx; i++) before += boards[i].weeks;
+    for(var j = idx + 1; j < boards.length; j++) after += boardMaxWeeks(boards[j]);
+    return state.totalWeeks - before - after;
+  }
+
+  function placementWeekRange(grade, boardIdx, subject){
+    var s = boardStartWeek(grade, boardIdx);
+    return { start: s, end: s + subject.weeks - 1 };
+  }
+
+  function forEachPlacement(fn){
+    GRADES.forEach(function(g){
+      (state.boardsByGrade[g] || []).forEach(function(board, bi){
+        board.placements.forEach(function(p){ fn(g, bi, p); });
+      });
+    });
+  }
+
+  function findPlacement(subjectId){
+    var found = null;
+    forEachPlacement(function(g, bi, p){
+      if(p.subjectId === subjectId) found = { grade: g, boardIdx: bi, placement: p };
+    });
+    return found;
+  }
+
+  /* ============================================================
+   * 배치 가능 여부 검사
+   *   같은 요일 + 교시 겹침 + 주차 겹침일 때
+   *     - 같은 강의실   → 불가 (강의실은 학년 공용)
+   *     - 같은 학년·반형태·반 → 불가 (학생이 두 곳에 있을 수 없음)
+   *     - 같은 교수      → 불가
+   * ============================================================ */
+  function checkPlacement(grade, boardIdx, subject, day, start){
+    var problems = [];
+    var span = subject.hours;
+
+    if(start + span > PERIOD_COUNT){
+      problems.push('시수 ' + span + '시간이 하루 교시(' + PERIOD_COUNT + '교시)를 넘어갑니다.');
+      return problems;
+    }
+    var cap = boardCapacity(grade, boardIdx);
+    if(subject.weeks > cap){
+      problems.push('이 구간에 남은 주차는 ' + cap + '주인데 과목 주차는 ' + subject.weeks + '주입니다.');
+      return problems;
+    }
+
+    var mine = placementWeekRange(grade, boardIdx, subject);
+
+    forEachPlacement(function(g, bi, p){
+      if(p.subjectId === subject.id) return;            // 자기 자신(이동)은 제외
+      var other = subjectById(p.subjectId);
+      if(!other) return;
+      if(p.day !== day) return;
+
+      var theirs = placementWeekRange(g, bi, other);
+      if(mine.end < theirs.start || theirs.end < mine.start) return;   // 주차가 안 겹침
+      if(start + span - 1 < p.start || p.start + other.hours - 1 < start) return;  // 교시가 안 겹침
+
+      var where = g + '학년 ' + p.day + ' ' + periodLabel(p.start);
+      if(other.room === subject.room){
+        problems.push('강의실 ' + subject.room + ' 중복 — ' + other.name + ' (' + where + ')');
+      }
+      if(g === grade && other.classType === subject.classType && other.classLabel === subject.classLabel){
+        problems.push(subject.classType + '반 ' + subject.classLabel + ' 시간 중복 — ' + other.name + ' (' + where + ')');
+      }
+      if(other.professor && subject.professor && other.professor === subject.professor){
+        problems.push(subject.professor + ' 교수 시간 중복 — ' + other.name + ' (' + where + ')');
+      }
+    });
+
+    // 같은 구간 안에서 칸이 이미 차 있는지
+    var board = state.boardsByGrade[grade][boardIdx];
+    board.placements.forEach(function(p){
+      if(p.subjectId === subject.id) return;
+      if(p.day !== day) return;
+      var other = subjectById(p.subjectId);
+      if(!other) return;
+      if(start + span - 1 < p.start || p.start + other.hours - 1 < start) return;
+      problems.push('이미 ' + other.name + '이(가) 놓여 있는 자리입니다.');
+    });
+
+    // 같은 내용의 문제는 한 번만
+    return problems.filter(function(m, i){ return problems.indexOf(m) === i; });
+  }
+
+  /* ============================================================
+   * 탭 전환
+   * ============================================================ */
+  document.querySelectorAll('.top-tab-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.top-tab-btn').forEach(function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      document.querySelectorAll('.tab-view').forEach(function(v){ v.classList.remove('active'); });
+      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      if(btn.dataset.tab === 'timetable') renderTimetableTab();
+    });
+  });
+
+  /* ============================================================
+   * 입력 폼
+   * ============================================================ */
+  var classTypeEl = document.getElementById('fClassType');
+  var classLabelEl = document.getElementById('fClassLabel');
+  var roomSelectEl = document.getElementById('fRoom');
+
+  function renderClassLabels(){
+    var opts = LABELS[classTypeEl.value] || [];
+    classLabelEl.innerHTML = opts.map(function(o){
+      return '<option value="' + o + '">' + o + '반</option>';
+    }).join('');
+  }
+  classTypeEl.addEventListener('change', renderClassLabels);
+
+  function renderRoomSelect(){
+    var cur = roomSelectEl.value;
+    roomSelectEl.innerHTML = state.rooms.map(function(r){
+      return '<option value="' + escapeHtml(r) + '">' + escapeHtml(r) + '</option>';
+    }).join('');
+    if(state.rooms.indexOf(cur) !== -1) roomSelectEl.value = cur;
+  }
+
+  function clearForm(){
+    document.getElementById('fName').value = '';
+    document.getElementById('fProfessor').value = '';
+    document.getElementById('fContent').value = '';
+    document.getElementById('fWeeks').value = 15;
+    document.getElementById('fHours').value = 3;
+    document.getElementById('fCredits').value = 3;
+  }
+
+  document.getElementById('formResetBtn').addEventListener('click', function(){
+    clearForm();
+    showToast('입력란을 비웠습니다');
+  });
+
+  document.getElementById('addSubjectBtn').addEventListener('click', function(){
+    var name = document.getElementById('fName').value.trim();
+    var professor = document.getElementById('fProfessor').value.trim();
+    var weeks = parseInt(document.getElementById('fWeeks').value, 10);
+    var hours = parseInt(document.getElementById('fHours').value, 10);
+    var credits = parseFloat(document.getElementById('fCredits').value);
+
+    if(!name){ showToast('과목명을 입력해 주세요'); return; }
+    if(!professor){ showToast('교수명을 입력해 주세요'); return; }
+    if(isNaN(weeks) || weeks < 1 || weeks > 16){ showToast('주차는 1~16 사이로 입력해 주세요'); return; }
+    if(isNaN(hours) || hours < 1 || hours > PERIOD_COUNT){ showToast('시수는 1~' + PERIOD_COUNT + ' 사이로 입력해 주세요'); return; }
+    if(isNaN(credits) || credits < 0){ showToast('학점을 확인해 주세요'); return; }
+    if(!state.rooms.length){ showToast('강의실을 먼저 등록해 주세요'); return; }
+
+    state.subjects.push({
+      id: newId('s'),
+      semester: document.getElementById('fSemester').value,
+      grade: document.getElementById('fGrade').value,
+      name: name,
+      classType: classTypeEl.value,
+      classLabel: classLabelEl.value,
+      professor: professor,
+      weeks: weeks,
+      hours: hours,
+      credits: credits,
+      room: roomSelectEl.value,
+      day: document.getElementById('fDay').value,
+      content: document.getElementById('fContent').value.trim()
+    });
+    saveState();
+    renderSubjectList();
+    clearForm();
+    showToast('"' + name + '" 과목을 추가했습니다');
+  });
+
+  function removeSubject(id){
+    var s = subjectById(id);
+    if(!s) return;
+    if(!window.confirm('"' + s.name + '" 과목을 삭제할까요? 시간표에 배치된 내용도 함께 지워집니다.')) return;
+    state.subjects = state.subjects.filter(function(x){ return x.id !== id; });
+    GRADES.forEach(function(g){
+      (state.boardsByGrade[g] || []).forEach(function(b){
+        b.placements = b.placements.filter(function(p){ return p.subjectId !== id; });
+      });
+      reflowBoards(g);
+    });
+    saveState();
+    renderSubjectList();
+    renderTimetableTab();
+    showToast('"' + s.name + '" 과목을 삭제했습니다');
+  }
+
+  function renderSubjectList(){
+    var tbody = document.getElementById('subjectTbody');
+    var wrap = document.getElementById('subjectTableWrap');
+    var empty = document.getElementById('subjectEmptyState');
+    document.getElementById('subjectCount').textContent = state.subjects.length + '과목';
+
+    if(!state.subjects.length){
+      wrap.style.display = 'none';
+      empty.style.display = 'block';
+      return;
+    }
+    wrap.style.display = 'block';
+    empty.style.display = 'none';
+    tbody.innerHTML = '';
+
+    var frag = document.createDocumentFragment();
+    state.subjects.forEach(function(s){
+      var placed = findPlacement(s.id);
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + escapeHtml(s.semester) + '학기</td>' +
+        '<td>' + escapeHtml(s.grade) + '학년</td>' +
+        '<td style="color:#e7e8ee;font-weight:650">' + escapeHtml(s.name) + '</td>' +
+        '<td>' + escapeHtml(s.classType) + ' ' + escapeHtml(s.classLabel) + '</td>' +
+        '<td>' + escapeHtml(s.professor) + '</td>' +
+        '<td>' + s.weeks + '주</td>' +
+        '<td>' + s.hours + '</td>' +
+        '<td>' + s.credits + '</td>' +
+        '<td>' + escapeHtml(s.room) + '</td>' +
+        '<td>' + escapeHtml(s.day) + '</td>' +
+        '<td>' + (placed
+            ? '<span class="badge badge-placed">' + placed.grade + '학년 ' + (placed.boardIdx + 1) + '구간</span>'
+            : '<span class="badge">미배치</span>') + '</td>' +
+        '<td class="td-content" title="' + escapeHtml(s.content) + '">' + escapeHtml(s.content) + '</td>';
+      var tdDel = document.createElement('td');
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'row-del-btn';
+      del.textContent = '삭제';
+      del.addEventListener('click', function(){ removeSubject(s.id); });
+      tdDel.appendChild(del);
+      tr.appendChild(tdDel);
+      frag.appendChild(tr);
+    });
+    tbody.appendChild(frag);
+  }
+
+  /* ============================================================
+   * 강의실 관리
+   * ============================================================ */
+  function renderRooms(){
+    var list = document.getElementById('roomList');
+    list.innerHTML = '';
+    if(!state.rooms.length){
+      list.innerHTML = '<span class="section-note">등록된 강의실이 없습니다.</span>';
+      return;
+    }
+    state.rooms.forEach(function(room){
+      var tag = document.createElement('span');
+      tag.className = 'room-tag';
+      tag.appendChild(document.createTextNode(room));
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.textContent = '×';
+      del.title = '강의실 삭제';
+      del.addEventListener('click', function(){ removeRoom(room); });
+      tag.appendChild(del);
+      list.appendChild(tag);
+    });
+  }
+
+  function removeRoom(room){
+    var inUse = state.subjects.filter(function(s){ return s.room === room; });
+    if(inUse.length){
+      showToast(room + ' 강의실은 ' + inUse.length + '개 과목이 사용 중이라 삭제할 수 없습니다', true);
+      return;
+    }
+    state.rooms = state.rooms.filter(function(r){ return r !== room; });
+    saveState();
+    renderRooms();
+    renderRoomSelect();
+    showToast(room + ' 강의실을 삭제했습니다');
+  }
+
+  document.getElementById('addRoomBtn').addEventListener('click', function(){
+    var input = document.getElementById('newRoomInput');
+    var v = input.value.trim();
+    if(!v){ showToast('추가할 강의실을 입력해 주세요'); return; }
+    if(state.rooms.indexOf(v) !== -1){ showToast('이미 등록된 강의실입니다'); return; }
+    state.rooms.push(v);
+    saveState();
+    input.value = '';
+    renderRooms();
+    renderRoomSelect();
+    showToast(v + ' 강의실을 추가했습니다');
+  });
+  document.getElementById('newRoomInput').addEventListener('keydown', function(e){
+    if(e.key === 'Enter') document.getElementById('addRoomBtn').click();
+  });
+
+  /* ============================================================
+   * 총 주차
+   * ============================================================ */
+  document.getElementById('applyWeeksBtn').addEventListener('click', function(){
+    var input = document.getElementById('totalWeeksInput');
+    var v = parseInt(input.value, 10);
+    if(isNaN(v) || v < 1 || v > 20){
+      showToast('총 주차는 1~20 사이로 입력해 주세요');
+      input.value = state.totalWeeks;
+      return;
+    }
+    // 줄일 때 뒤쪽 구간의 배치가 잘려나가는지 먼저 확인
+    var willDrop = 0;
+    GRADES.forEach(function(g){
+      var used = 0;
+      (state.boardsByGrade[g] || []).forEach(function(b){
+        var mx = boardMaxWeeks(b);
+        if(used >= v && b.placements.length) willDrop += b.placements.length;
+        used += mx > 0 ? mx : 0;
+      });
+    });
+    if(willDrop && !window.confirm('총 주차를 줄이면 뒤쪽 구간에 배치된 ' + willDrop + '개 과목이 사라집니다. 계속할까요?')) {
+      input.value = state.totalWeeks;
+      return;
+    }
+    state.totalWeeks = v;
+    GRADES.forEach(reflowBoards);
+    saveState();
+    renderTimetableTab();
+    showToast('총 운영 주차를 ' + v + '주로 설정했습니다');
+  });
+
+  /* ============================================================
+   * 시간표 렌더링
+   * ============================================================ */
+  function renderTimetableTab(){
+    var empty = document.getElementById('ttEmptyState');
+    var content = document.getElementById('ttContent');
+    if(!state.subjects.length){
+      empty.style.display = 'block';
+      content.style.display = 'none';
+      return;
+    }
+    empty.style.display = 'none';
+    content.style.display = 'block';
+    document.getElementById('totalWeeksInput').value = state.totalWeeks;
+    renderRooms();
+    reflowBoards(currentGrade);
+    renderPool();
+    renderBoards();
+  }
+
+  document.getElementById('ttGradeFilter').addEventListener('click', function(e){
+    var btn = e.target.closest('.grade-chip');
+    if(!btn) return;
+    currentGrade = btn.dataset.grade;
+    Array.prototype.forEach.call(this.querySelectorAll('.grade-chip'), function(b){
+      b.classList.toggle('active', b === btn);
+    });
+    renderTimetableTab();
+  });
+
+  function makeChip(subject){
+    var chip = document.createElement('div');
+    chip.className = 'subject-chip';
+    chip.draggable = true;
+    chip.dataset.sid = subject.id;
+    chip.innerHTML =
+      '<span class="chip-name">' + escapeHtml(subject.name) + '</span>' +
+      '<span class="chip-meta">' + escapeHtml(subject.professor) + ' · ' + escapeHtml(subject.room) + '</span>';
+    chip.addEventListener('dragstart', function(e){
+      e.dataTransfer.setData('text/plain', subject.id);
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    return chip;
+  }
+
+  function renderPool(){
+    var list = document.getElementById('poolList');
+    list.innerHTML = '';
+    var pool = state.subjects.filter(function(s){
+      return s.grade === currentGrade && !findPlacement(s.id);
+    });
+    document.getElementById('poolCount').textContent = pool.length;
+    if(!pool.length){
+      var e = document.createElement('div');
+      e.className = 'empty-state';
+      e.style.padding = '14px 4px';
+      e.textContent = '모두 배치되었습니다';
+      list.appendChild(e);
+      return;
+    }
+    pool.forEach(function(s){ list.appendChild(makeChip(s)); });
+  }
+
+  function renderBoards(){
+    var area = document.getElementById('boardArea');
+    area.innerHTML = '';
+    var boards = state.boardsByGrade[currentGrade] || [];
+
+    boards.forEach(function(board, boardIdx){
+      var startW = boardStartWeek(currentGrade, boardIdx);
+      var endW = startW + board.weeks - 1;
+
+      var wrap = document.createElement('div');
+      wrap.className = 'board';
+
+      var head = document.createElement('div');
+      head.className = 'board-head';
+      head.innerHTML = '<span>' + (boardIdx + 1) + '구간</span>' +
+        '<span class="board-range">' + startW + '~' + endW + '주 (' + board.weeks + '주)</span>';
+      wrap.appendChild(head);
+
+      // 어느 칸이 차 있는지 미리 계산
+      var occupied = {};
+      board.placements.forEach(function(p){
+        var s = subjectById(p.subjectId);
+        if(!s) return;
+        for(var k = 0; k < s.hours; k++){
+          occupied[p.day + '-' + (p.start + k)] = { placement: p, subject: s, offset: k };
+        }
+      });
+
+      var scroll = document.createElement('div');
+      scroll.className = 'board-scroll';
+      var table = document.createElement('table');
+      table.className = 'tt-table';
+
+      var thead = document.createElement('thead');
+      thead.innerHTML = '<tr><th class="th-period">교시</th><th class="th-time">시간</th>' +
+        DAYS.map(function(d){ return '<th>' + d + '</th>'; }).join('') + '</tr>';
+      table.appendChild(thead);
+
+      var tbody = document.createElement('tbody');
+      for(var i = 0; i < PERIOD_COUNT; i++){
+        var tr = document.createElement('tr');
+        var tdP = document.createElement('td');
+        tdP.className = 'period-cell';
+        tdP.innerHTML = (i + 1) + '<small>' + periodTime(i).split('~')[0] + '</small>';
+        tr.appendChild(tdP);
+        var tdT = document.createElement('td');
+        tdT.className = 'period-cell';
+        tdT.style.fontWeight = '500';
+        tdT.style.fontSize = '10.5px';
+        tdT.textContent = periodTime(i);
+        tr.appendChild(tdT);
+
+        DAYS.forEach(function(day){
+          var key = day + '-' + i;
+          var occ = occupied[key];
+          var td = document.createElement('td');
+
+          if(occ && occ.offset > 0){
+            td.className = 'cell-cont';       // 앞 교시에서 이어지는 칸
+            tr.appendChild(td);
+            return;
+          }
+          if(occ){
+            td.rowSpan = occ.subject.hours;
+            td.className = 'slot occupied';
+            var box = document.createElement('div');
+            box.className = 'placed';
+            box.draggable = true;
+            box.innerHTML =
+              '<span class="p-name">' + escapeHtml(occ.subject.name) + '</span>' +
+              '<span class="p-meta">' + escapeHtml(occ.subject.professor) + '</span>' +
+              '<span class="p-meta">' + escapeHtml(occ.subject.room) + '</span>';
+            box.addEventListener('dragstart', function(e){
+              e.dataTransfer.setData('text/plain', occ.subject.id);
+              e.dataTransfer.effectAllowed = 'move';
+            });
+            var del = document.createElement('button');
+            del.type = 'button';
+            del.className = 'p-del';
+            del.title = '배치 해제';
+            del.textContent = '×';
+            (function(sid){
+              del.addEventListener('click', function(ev){
+                ev.stopPropagation();
+                unplace(sid);
+              });
+            })(occ.subject.id);
+            box.appendChild(del);
+            td.appendChild(box);
+            tr.appendChild(td);
+            return;
+          }
+
+          var slot = document.createElement('div');
+          slot.className = 'slot';
+          td.appendChild(slot);
+          (function(d, periodIdx, bIdx){
+            slot.addEventListener('dragover', function(e){
+              e.preventDefault();
+              slot.classList.add('drag-over');
+            });
+            slot.addEventListener('dragleave', function(){ slot.classList.remove('drag-over'); });
+            slot.addEventListener('drop', function(e){
+              e.preventDefault();
+              slot.classList.remove('drag-over');
+              var sid = e.dataTransfer.getData('text/plain');
+              if(sid) place(sid, bIdx, d, periodIdx);
+            });
+          })(day, i, boardIdx);
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      scroll.appendChild(table);
+      wrap.appendChild(scroll);
+      area.appendChild(wrap);
+    });
+  }
+
+  function place(subjectId, boardIdx, day, start){
+    var subject = subjectById(subjectId);
+    if(!subject) return;
+    if(subject.grade !== currentGrade){
+      showToast(subject.grade + '학년 과목은 ' + subject.grade + '학년 시간표에만 배치할 수 있습니다', true);
+      return;
+    }
+    var problems = checkPlacement(currentGrade, boardIdx, subject, day, start);
+    if(problems.length){
+      showToast('배치할 수 없습니다\n· ' + problems.join('\n· '), true);
+      return;
+    }
+    // 기존 배치가 있으면 옮기는 것으로 처리
+    var prev = findPlacement(subjectId);
+    if(prev){
+      var pb = state.boardsByGrade[prev.grade][prev.boardIdx];
+      pb.placements = pb.placements.filter(function(p){ return p.subjectId !== subjectId; });
+    }
+    state.boardsByGrade[currentGrade][boardIdx].placements.push({
+      subjectId: subjectId, day: day, start: start
+    });
+    subject.day = day;                       // 배치한 요일을 과목 정보에도 반영
+    reflowBoards(currentGrade);
+    saveState();
+    renderPool();
+    renderBoards();
+    renderSubjectList();
+    showToast(subject.name + ' → ' + day + '요일 ' + periodLabel(start) + ' 배치');
+  }
+
+  function unplace(subjectId){
+    var found = findPlacement(subjectId);
+    if(!found) return;
+    var board = state.boardsByGrade[found.grade][found.boardIdx];
+    board.placements = board.placements.filter(function(p){ return p.subjectId !== subjectId; });
+    reflowBoards(found.grade);
+    saveState();
+    renderPool();
+    renderBoards();
+    renderSubjectList();
+    var s = subjectById(subjectId);
+    showToast((s ? s.name : '과목') + ' 배치를 해제했습니다');
+  }
+
+  document.getElementById('clearGradeBtn').addEventListener('click', function(){
+    var boards = state.boardsByGrade[currentGrade] || [];
+    var count = boards.reduce(function(n, b){ return n + b.placements.length; }, 0);
+    if(!count){ showToast('배치된 과목이 없습니다'); return; }
+    if(!window.confirm(currentGrade + '학년의 배치 ' + count + '건을 모두 초기화할까요?')) return;
+    boards.forEach(function(b){ b.placements = []; });
+    reflowBoards(currentGrade);
+    saveState();
+    renderTimetableTab();
+    renderSubjectList();
+    showToast(currentGrade + '학년 배치를 초기화했습니다');
+  });
+
+  /* ============================================================
+   * 엑셀 내보내기
+   * ============================================================ */
+  function todayStamp(){
+    var d = new Date();
+    return String(d.getFullYear()) + pad2(d.getMonth() + 1) + pad2(d.getDate());
+  }
+
+  function subjectSheetRows(){
+    var rows = [['학기', '학년', '과목명', '반형태', '반', '교수명', '주차', '시수', '학점', '강의실', '요일', '배치', '교육내용']];
+    state.subjects.forEach(function(s){
+      var placed = findPlacement(s.id);
+      rows.push([
+        s.semester + '학기', s.grade + '학년', s.name, s.classType + '반', s.classLabel,
+        s.professor, s.weeks, s.hours, s.credits, s.room, s.day,
+        placed ? (placed.grade + '학년 ' + (placed.boardIdx + 1) + '구간 ' + placed.placement.day + ' ' + periodLabel(placed.placement.start)) : '미배치',
+        s.content
+      ]);
+    });
+    return rows;
+  }
+
+  function boardSheetRows(grade, boardIdx){
+    var board = state.boardsByGrade[grade][boardIdx];
+    var occupied = {};
+    board.placements.forEach(function(p){
+      var s = subjectById(p.subjectId);
+      if(!s) return;
+      for(var k = 0; k < s.hours; k++){
+        occupied[p.day + '-' + (p.start + k)] = { subject: s, offset: k };
+      }
+    });
+    var rows = [['교시', '시간'].concat(DAYS)];
+    for(var i = 0; i < PERIOD_COUNT; i++){
+      var row = [periodLabel(i), periodTime(i)];
+      DAYS.forEach(function(day){
+        var occ = occupied[day + '-' + i];
+        if(!occ){ row.push(''); return; }
+        if(occ.offset > 0){ row.push('〃'); return; }
+        var s = occ.subject;
+        row.push(s.name + ' · ' + s.professor + ' · ' + s.room +
+          ' (' + s.classType + s.classLabel + ')');
+      });
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  function autoCols(rows){
+    var widths = [];
+    rows.forEach(function(r){
+      r.forEach(function(c, i){
+        var len = String(c == null ? '' : c).length + 4;
+        if(!widths[i] || widths[i] < len) widths[i] = len;
+      });
+    });
+    return widths.map(function(w){ return { wch: Math.min(Math.max(w, 8), 40) }; });
+  }
+
+  function exportWorkbook(includeTimetable){
+    if(!state.subjects.length){ showToast('내보낼 과목이 없습니다'); return; }
+    try {
+      var wb = XLSX.utils.book_new();
+
+      if(includeTimetable){
+        var any = false;
+        GRADES.forEach(function(g){
+          reflowBoards(g);
+          (state.boardsByGrade[g] || []).forEach(function(board, bi){
+            if(!board.placements.length) return;     // 빈 구간은 시트로 만들지 않음
+            any = true;
+            var sw = boardStartWeek(g, bi);
+            var rows = boardSheetRows(g, bi);
+            var ws = XLSX.utils.aoa_to_sheet(rows);
+            ws['!cols'] = autoCols(rows);
+            var nm = g + '학년 ' + (bi + 1) + '구간(' + sw + '-' + (sw + board.weeks - 1) + '주)';
+            XLSX.utils.book_append_sheet(wb, ws, nm.slice(0, 31));
+          });
+        });
+        if(!any){ showToast('시간표에 배치된 과목이 없습니다', true); return; }
+      }
+
+      var srows = subjectSheetRows();
+      var sws = XLSX.utils.aoa_to_sheet(srows);
+      sws['!cols'] = autoCols(srows);
+      XLSX.utils.book_append_sheet(wb, sws, '과목목록');
+
+      var fname = (includeTimetable ? '시간표_' : '과목목록_') + todayStamp() + '.xlsx';
+      XLSX.writeFile(wb, fname);
+      showToast(fname + ' 저장했습니다');
+    } catch(e){
+      showToast('엑셀 저장에 실패했습니다', true);
+    }
+  }
+
+  document.getElementById('exportSubjectsBtn').addEventListener('click', function(){ exportWorkbook(false); });
+  document.getElementById('exportTimetableBtn').addEventListener('click', function(){ exportWorkbook(true); });
+
+  /* ---------- 초기 렌더 ---------- */
+  renderClassLabels();
+  renderRoomSelect();
+  renderRooms();
+  GRADES.forEach(reflowBoards);
+  renderSubjectList();
+})();
+</script>
 </body>
 </html>
