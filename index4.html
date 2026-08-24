@@ -194,8 +194,14 @@
   .pool-list .subject-chip{width:190px;flex:0 0 auto}
   .pool-list .empty-state{width:100%}
 
-  /* 시간표 탭에서는 창 너비를 그대로 쓰도록 폭 제한을 푼다 */
+  /* 시간표 탭에서는 폭 제한을 풀고, 표가 창보다 넓으면 레이아웃 자체가
+   * 표 크기까지 늘어나며 페이지가 가로로 스크롤된다 (표 안에서만 잘리지 않게). */
+  body.tt-wide{overflow-x:auto}
   body.tt-wide .wrap{max-width:none}
+  body.tt-wide main.app-main{width:max-content;min-width:100%}
+  body.tt-wide .board-scroll{overflow-x:visible}
+  body.tt-wide header.app-header,
+  body.tt-wide footer.wrap{min-width:100%}
 
   .subject-chip{
     border:1px solid var(--stroke);background:rgba(255,255,255,.06);
@@ -215,7 +221,7 @@
     display:flex;align-items:center;gap:10px;flex-wrap:wrap;
   }
   .board-range{color:var(--muted);font-weight:650;font-size:12.5px}
-  .board-scroll{overflow-x:auto}
+  .board-scroll{overflow-x:auto;position:relative}
   table.tt-table{border-collapse:collapse;font-size:11.5px;table-layout:fixed}
   table.tt-table th{
     background:#1c1c26;color:#d3d7e4;font-weight:650;padding:6px 4px;
@@ -233,7 +239,12 @@
   .period-cell{background:#17171f;color:var(--muted);text-align:center;font-weight:650}
   .period-cell small{display:block;color:var(--dim);font-weight:500;font-size:10px}
   .slot{height:100%;min-height:50px;padding:2px;transition:.12s}
-  .slot.drag-over{background:rgba(124,92,255,.18);box-shadow:inset 0 0 0 2px var(--a1)}
+  /* 드래그 중 미리보기 — 배치될 영역(반 폭 × 시수 높이)을 그대로 덧그린다 */
+  .tt-preview{
+    position:absolute;pointer-events:none;z-index:5;display:none;border-radius:7px;
+    background:rgba(124,92,255,.3);box-shadow:inset 0 0 0 2px var(--a1);
+  }
+  .tt-preview.bad{background:rgba(255,92,157,.24);box-shadow:inset 0 0 0 2px rgba(255,92,157,.85)}
   td.occupied{padding:0}
   .placed{
     height:100%;border-radius:7px;padding:5px 6px;
@@ -1288,6 +1299,81 @@
     renderTimetableTab();
   });
 
+  /* ---------- 드래그 미리보기 ----------
+   * dragover 에서는 dataTransfer 를 읽을 수 없으므로 끌기 시작할 때
+   * 대상 과목을 기억해 두고, 실제로 차지할 영역만큼 칠해 준다. */
+  var dragSubjectId = null;
+
+  function clearPreview(){
+    Array.prototype.forEach.call(document.querySelectorAll('.tt-preview'), function(el){
+      el.style.display = 'none';
+    });
+  }
+
+  /* 요일 안 4칸 각각의 화면상 위치를 구한다.
+   * 수업반 머리글(a·b·c) 폭을 COL_UNITS 비율로 나누면 칸 경계가 나온다. */
+  function columnEdges(table){
+    var suCells = Array.prototype.slice.call(table.querySelectorAll('thead tr')[2].cells);
+    var edges = [], idx = 0;
+    DAYS.forEach(function(day, di){
+      edges[di] = [];
+      LABELS['수업'].forEach(function(L){
+        var g = CLASS_SPANS['수업'][L];
+        var rect = suCells[idx++].getBoundingClientRect();
+        var units = 0, c;
+        for(c = g[0]; c <= g[1]; c++) units += COL_UNITS[c];
+        var x = rect.left;
+        for(c = g[0]; c <= g[1]; c++){
+          var w = rect.width * (COL_UNITS[c] / units);
+          edges[di][c] = { left: x, width: w };
+          x += w;
+        }
+      });
+    });
+    return edges;
+  }
+
+  function showPreview(boardIdx, day, period){
+    clearPreview();
+    var s = subjectById(dragSubjectId);
+    if(!s) return;
+    var boardEl = document.querySelectorAll('.board')[boardIdx];
+    if(!boardEl) return;
+    var scroll = boardEl.querySelector('.board-scroll');
+    var table = boardEl.querySelector('.tt-table');
+    var rows = table.querySelectorAll('tbody tr');
+    var lastPeriod = period + s.hours - 1;
+    if(lastPeriod >= rows.length) lastPeriod = rows.length - 1;
+
+    var box = scroll.querySelector('.tt-preview');
+    if(!box){
+      box = document.createElement('div');
+      box.className = 'tt-preview';
+      scroll.appendChild(box);
+    }
+
+    var sp = spanOf(s);
+    var di = DAYS.indexOf(day);
+    var edges = columnEdges(table);
+    var left = edges[di][sp[0]].left;
+    var right = edges[di][sp[1]].left + edges[di][sp[1]].width;
+    var top = rows[period].getBoundingClientRect().top;
+    var bottom = rows[lastPeriod].getBoundingClientRect().bottom;
+
+    var base = scroll.getBoundingClientRect();
+    box.style.left = (left - base.left + scroll.scrollLeft) + 'px';
+    box.style.top = (top - base.top + scroll.scrollTop) + 'px';
+    box.style.width = (right - left) + 'px';
+    box.style.height = (bottom - top) + 'px';
+    box.classList.toggle('bad', checkBase(currentGrade, boardIdx, s, day, period).length > 0);
+    box.style.display = 'block';
+  }
+
+  document.addEventListener('dragend', function(){
+    dragSubjectId = null;
+    clearPreview();
+  });
+
   function makeChip(subject){
     var chip = document.createElement('div');
     chip.className = 'subject-chip';
@@ -1298,6 +1384,7 @@
       '<span class="chip-name">' + escapeHtml(subject.name) + '</span>' +
       '<span class="chip-meta">' + escapeHtml(subject.professor) + ' · ' + subject.hours + '시수 · ' + subject.weeks + '주</span>';
     chip.addEventListener('dragstart', function(e){
+      dragSubjectId = subject.id;
       e.dataTransfer.setData('text/plain', subject.id);
       e.dataTransfer.effectAllowed = 'move';
     });
@@ -1477,6 +1564,7 @@
                     : '');
                 (function(sid){
                   box.addEventListener('dragstart', function(e){
+                    dragSubjectId = sid;
                     e.dataTransfer.setData('text/plain', sid);
                     e.dataTransfer.effectAllowed = 'move';
                   });
@@ -1498,16 +1586,19 @@
 
               var slot = document.createElement('div');
               slot.className = 'slot';
+              slot.dataset.day = day;
+              slot.dataset.from = piece.from;
+              slot.dataset.to = piece.to;
+              slot.dataset.period = period;
               td.appendChild(slot);
               (function(d, bIdx){
                 slot.addEventListener('dragover', function(e){
                   e.preventDefault();
-                  slot.classList.add('drag-over');
+                  showPreview(bIdx, d, period);
                 });
-                slot.addEventListener('dragleave', function(){ slot.classList.remove('drag-over'); });
                 slot.addEventListener('drop', function(e){
                   e.preventDefault();
-                  slot.classList.remove('drag-over');
+                  clearPreview();
                   var sid = e.dataTransfer.getData('text/plain');
                   if(sid) place(sid, bIdx, d, period);
                 });
