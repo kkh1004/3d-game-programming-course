@@ -556,15 +556,22 @@ function applyAction(store, action, payload, password) {
       return { ok: true, message: 'evaluations cleared: ' + ceCleared };
     }
 
-    /* 학생 한 명의 제출만 지운다 — 다시 평가하게 해줄 때 쓴다.
-     * 비밀번호는 남겨두므로 학생은 같은 비밀번호로 들어와 다시 낼 수 있다. */
+    /* 학생 한 명을 처음 상태로 되돌린다 — 제출한 점수와 비밀번호를 함께 지운다.
+     *
+     * 점수만 지우는 것은 의미가 적다. 학생은 자기 비밀번호로 다시 들어와
+     * 언제든 점수를 고칠 수 있었으니, 교수가 초기화를 누르는 상황은 그 학생을
+     * 처음부터 다시 시작하게 하려는 것이다. 비밀번호를 남겨두면 비밀번호를
+     * 잊은 학생은 초기화를 해줘도 여전히 들어오지 못한다. */
     case 'clearStudentEvaluation': {
       if (password !== store.password) return { ok: false, error: 'wrong password' };
       var csId = String(payload.studentId || '');
       if (!csId) return { ok: false, error: 'bad payload' };
-      if (state.evaluations[csId] === undefined) return { ok: false, error: 'nothing submitted' };
+      var hadSubmission = state.evaluations[csId] !== undefined;
+      var hadPassword = state.studentAuth[csId] !== undefined;
+      if (!hadSubmission && !hadPassword) return { ok: false, error: 'nothing to clear' };
       delete state.evaluations[csId];
-      return { ok: true, message: 'student evaluation cleared' };
+      delete state.studentAuth[csId];
+      return { ok: true, message: 'student reset' };
     }
 
     // 학생이 비밀번호를 잊었을 때 — 교수가 지워 주면 다시 만들 수 있다

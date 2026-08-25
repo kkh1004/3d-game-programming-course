@@ -774,7 +774,7 @@
    *
    * 커밋 메시지 끝에도 같은 값을 (v1.1) 형식으로 붙인다.
    * ============================================================ */
-  var APP_VERSION = '1.3';
+  var APP_VERSION = '1.4';
 
   var ROLES = ['기획', '아트', '개발'];
   var INDIVIDUAL_GRADES = ['2', '3'];
@@ -2810,15 +2810,17 @@
        * 제출한 학생 옆에는 그 학생만 다시 평가하게 해주는 버튼을 붙인다. */
       var tdDone = document.createElement('td');
       var submitted = hasSubmitted(s.studentId);
+      var hasPw = hasPassword(s.studentId);
       var doneMark = document.createElement('span');
-      doneMark.textContent = submitted ? '✓' : (hasPassword(s.studentId) ? '비번만' : '—');
+      doneMark.textContent = submitted ? '✓' : (hasPw ? '비번만' : '—');
       tdDone.appendChild(doneMark);
-      if(submitted){
+      // 지울 것이 있는 학생에게만 버튼을 붙인다 (제출했거나 비밀번호를 만든 학생)
+      if(submitted || hasPw){
         var resetBtn = document.createElement('button');
         resetBtn.type = 'button';
         resetBtn.className = 'submit-reset-btn';
         resetBtn.textContent = '제출 초기화';
-        resetBtn.title = '이 학생의 제출만 지웁니다. 비밀번호는 그대로 두므로 같은 비밀번호로 다시 평가할 수 있습니다.';
+        resetBtn.title = '이 학생의 제출과 비밀번호를 함께 지웁니다. 학생은 비밀번호를 새로 만들고 처음부터 다시 평가합니다.';
         (function(student){
           resetBtn.addEventListener('click', function(ev){
             ev.stopPropagation();
@@ -2911,22 +2913,23 @@
     });
   });
 
-  /* 학생 한 명의 제출만 지운다. 결과 탭을 열 때 확인한 교수 비밀번호를
-   * 그대로 재사용하므로 매번 다시 묻지 않는다. */
+  /* 학생 한 명을 처음 상태로 되돌린다 — 제출 점수와 비밀번호를 함께 지운다.
+   * 결과 탭을 열 때 확인한 교수 비밀번호를 재사용하므로 매번 다시 묻지 않는다. */
   function clearOneSubmission(student){
     if(!resultsPassword){
       showToast('먼저 비밀번호로 잠금을 해제해 주세요');
       return;
     }
-    if(!window.confirm(student.name + '(' + student.studentId + ')의 제출을 지웁니다.\n' +
-        '이 학생이 낸 점수만 사라지고, 비밀번호는 그대로 남아 같은 비밀번호로 다시 평가할 수 있습니다.\n' +
+    if(!window.confirm(student.name + '(' + student.studentId + ')을 처음 상태로 되돌립니다.\n\n' +
+        '· 제출한 점수가 지워집니다\n' +
+        '· 평가용 비밀번호도 지워집니다 (학생이 새로 만들어야 합니다)\n\n' +
         '되돌릴 수 없습니다. 계속할까요?')) return;
 
     callServer('clearStudentEvaluation', { studentId: student.studentId }, resultsPassword, function(res){
       if(!res || !res.ok){
         var why = !res ? '서버에 연결할 수 없습니다'
           : res.error === 'wrong password' ? '비밀번호가 더 이상 유효하지 않습니다. 다시 잠금을 해제해 주세요'
-          : res.error === 'nothing submitted' ? '이미 제출 기록이 없습니다'
+          : res.error === 'nothing to clear' ? '이미 지울 기록이 없습니다'
           : (res.error || '알 수 없는 오류');
         showToast('초기화에 실패했습니다: ' + why);
         return;
@@ -2938,7 +2941,7 @@
       fetchResults(resultsPassword, function(evaluations){
         resultsEvaluations = evaluations === null ? {} : evaluations;
         renderResultsList(currentResultsGrade);
-        showToast(student.name + '님의 제출을 초기화했습니다');
+        showToast(student.name + '님을 초기화했습니다 (점수·비밀번호)');
       });
     });
   }
@@ -2971,8 +2974,9 @@
       var resetPwBtn = document.createElement('button');
       resetPwBtn.type = 'button';
       resetPwBtn.className = 'ghost-btn';
-      resetPwBtn.textContent = '이 학생 비밀번호 초기화';
-      resetPwBtn.title = '학생이 비밀번호를 잊었을 때 사용합니다 (제출한 평가는 그대로 남습니다)';
+      // 결과 표의 "제출 초기화"는 점수까지 지운다. 여기는 점수를 남기는 쪽.
+      resetPwBtn.textContent = '비밀번호만 초기화 (점수 유지)';
+      resetPwBtn.title = '학생이 비밀번호를 잊었을 때 씁니다. 제출한 점수는 그대로 남고, 학생은 새 비밀번호를 만들어 이어서 수정할 수 있습니다.';
       resetPwBtn.addEventListener('click', function(){
         requirePassword('학생 비밀번호 초기화',
           student.name + '(' + student.studentId + ')의 평가용 비밀번호를 지웁니다. 학생이 새로 만들어야 합니다. 비밀번호를 입력하세요.',
