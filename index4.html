@@ -347,6 +347,11 @@
     border-radius:10px;padding:10px 14px;
   }
   .hours-plan b{color:#8ef0c8}
+  body:not(.intensive) .intensive-only{display:none}
+  .chip-session{
+    display:inline-block;margin-left:5px;padding:1px 6px;border-radius:100px;
+    background:rgba(255,255,255,.18);font-size:10px;font-weight:700;vertical-align:middle;
+  }
   .hours-plan .warn{color:#ff9ec4}
 
   .label-checks{display:flex;gap:8px;flex-wrap:wrap;padding-top:3px}
@@ -559,6 +564,21 @@
             <input type="text" id="fProfessor" class="input-field" placeholder="예: 김강호">
           </div>
           <div class="field">
+            <label for="fCourseType">과목 형태</label>
+            <select id="fCourseType" class="input-field">
+              <option value="일반">일반</option>
+              <option value="집중">집중이수제 프로젝트수업</option>
+            </select>
+          </div>
+          <div class="field intensive-only">
+            <label for="fSessions">주 몇 회</label>
+            <input type="number" id="fSessions" class="input-field" min="1" max="5" value="2">
+          </div>
+          <div class="field intensive-only">
+            <label for="fMaxSessionHours">회차당 최대 시간 (최대 8)</label>
+            <input type="number" id="fMaxSessionHours" class="input-field" min="1" max="8" value="8">
+          </div>
+          <div class="field">
             <label for="fWeekStart">시작 주차</label>
             <input type="number" id="fWeekStart" class="input-field" min="1" max="20" value="1">
           </div>
@@ -731,7 +751,7 @@
 (function(){
   /* 버전 — 올릴 때마다 뒷자리를 1씩 증가시킨다.
    * 앞자리는 지정이 있을 때만 올린다. */
-  var APP_VERSION = '1.2';
+  var APP_VERSION = '1.3';
 
   var DAYS = ['월', '화', '수', '목', '금'];
   var PERIOD_COUNT = 9;             // 9:30 시작, 50분 수업 + 10분 휴식
@@ -882,6 +902,16 @@
       subj.weekEnd = clampWeek(subj.weekEnd, s.totalWeeks);
       if(subj.weekEnd < subj.weekStart) subj.weekEnd = subj.weekStart;
       delete subj.weeks;
+      // 과목 형태가 없던 예전 자료는 모두 일반으로 본다
+      if(!subj.courseType){
+        subj.courseType = '일반';
+        subj.sessionsPerWeek = 1;
+        subj.maxSessionHours = MAX_SESSION_HOURS;
+        didMigrate = true;
+      }
+    });
+    (s.placements || []).forEach(function(p){
+      if(p.session == null) p.session = 0;
     });
   }
 
@@ -1182,7 +1212,7 @@
       var s = subjectById(p.subjectId);
       if(!s) return;
       var sp = spanOf(s);
-      var hrs = maxHours(s);
+      var hrs = hoursOfSession(s, p.session || 0);
 
       var target = null;
       for(var i = 0; i < groups.length; i++){
@@ -1230,11 +1260,33 @@
     return { start: subject.weekStart, end: subject.weekEnd };
   }
 
-  function findPlacement(subjectId){
+  // 집중이수제는 회차마다 배치가 따로 있으므로 session 으로 구분한다
+  function findPlacement(subjectId, session){
+    if(session === undefined) session = 0;
     for(var i = 0; i < state.placements.length; i++){
-      if(state.placements[i].subjectId === subjectId) return state.placements[i];
+      var p = state.placements[i];
+      if(p.subjectId === subjectId && (p.session || 0) === session) return p;
     }
     return null;
+  }
+
+  function placementsOfSubject(subjectId){
+    return state.placements.filter(function(p){ return p.subjectId === subjectId; })
+      .sort(function(a, b){ return (a.session || 0) - (b.session || 0); });
+  }
+
+  function isFullyPlaced(subject){
+    return placementsOfSubject(subject.id).length >= sessionCount(subject);
+  }
+
+  // 배치 현황을 한 줄로 — 집중이수제는 회차를 함께 적는다
+  function placementText(subject){
+    var list = placementsOfSubject(subject.id);
+    if(!list.length) return '';
+    return list.map(function(p){
+      return (isIntensive(subject) ? (p.session || 0) + 1 + '회차 ' : '') +
+        p.day + ' ' + periodLabel(p.start) + ' · ' + (p.room || '-');
+    }).join(' / ');
   }
 
   /* ============================================================
@@ -1281,6 +1333,44 @@
     return m || subject.hours;
   }
 
+  /* ============================================================
+   * 집중이수제 프로젝트수업
+   *   13~15주처럼 짧게 몰아서 하는 과목은 한 주의 수업시간이 커져
+   *   하루에 다 넣을 수 없다. 그래서 "주 N회"로 나눠 각 회차를
+   *   원하는 요일에 따로 배치한다.
+   *   회차별 시간은 가장 바쁜 주를 N등분하고 남는 시간은 앞 회차에 준다.
+   * ============================================================ */
+  var MAX_SESSION_HOURS = 8;         // 한 번에 몰 수 있는 최대 교시
+
+  function isIntensive(subject){
+    return subject.courseType === '집중';
+  }
+
+  function sessionCount(subject){
+    if(!isIntensive(subject)) return 1;
+    return Math.max(1, subject.sessionsPerWeek || 1);
+  }
+
+  function sessionHours(subject){
+    var peak = maxHours(subject);
+    var n = sessionCount(subject);
+    if(n <= 1) return [peak];
+    var base = Math.floor(peak / n), extra = peak % n;
+    var out = [];
+    for(var i = 0; i < n; i++) out.push(base + (i < extra ? 1 : 0));
+    return out;
+  }
+
+  function hoursOfSession(subject, session){
+    var list = sessionHours(subject);
+    return list[session] || list[0] || subject.hours;
+  }
+
+  function sessionText(subject){
+    if(!isIntensive(subject)) return planText(subject);
+    return '주 ' + sessionCount(subject) + '회 · ' + sessionHours(subject).join('+') + '시간';
+  }
+
   function planText(subject){
     return weekPlan(subject).map(function(p){
       return p.from + (p.to > p.from ? '~' + p.to : '') + '주 ' + p.hours + '시간';
@@ -1296,10 +1386,13 @@
    * ============================================================ */
   // 겹치는 배치(같은 요일 + 교시 겹침 + 주차 겹침)를 훑는다.
   // 시수가 주차마다 다를 수 있으므로 겹치는 주를 하나씩 보며 판단한다.
-  function forEachOverlap(subject, day, start, fn){
+  function forEachOverlap(subject, session, day, start, fn){
     var mine = placementWeekRange(subject);
+    var myHours = hoursOfSession(subject, session);
     state.placements.forEach(function(p){
-      if(p.subjectId === subject.id) return;            // 자기 자신(이동)은 제외
+      // 같은 과목의 같은 회차(자기 자신, 이동)만 건너뛴다.
+      // 집중이수제는 회차끼리도 시간이 겹치면 안 되므로 다른 회차는 검사한다.
+      if(p.subjectId === subject.id && (p.session || 0) === session) return;
       var other = subjectById(p.subjectId);
       if(!other) return;
       if(p.day !== day) return;
@@ -1308,9 +1401,12 @@
       var to = Math.min(mine.end, theirs.end);
       if(from > to) return;                             // 주차가 안 겹침
 
+      var otherHours = hoursOfSession(other, p.session || 0);
       var hit = false;
       for(var w = from; w <= to && !hit; w++){
-        var mh = hoursAtWeek(subject, w), oh = hoursAtWeek(other, w);
+        // 집중이수제는 회차 시간이 주마다 같으므로 그대로, 일반은 그 주의 시수로 본다
+        var mh = isIntensive(subject) ? myHours : hoursAtWeek(subject, w);
+        var oh = isIntensive(other) ? otherHours : hoursAtWeek(other, w);
         if(!(start + mh - 1 < p.start || p.start + oh - 1 < start)) hit = true;
       }
       if(hit) fn(other.grade, p, other);
@@ -1322,13 +1418,14 @@
   }
 
   // 강의실과 무관한 검사 (교시 범위, 주차 범위, 반 중복, 교수 중복, 자리 점유)
-  function checkBase(grade, subject, day, start){
+  function checkBase(grade, subject, session, day, start){
     var problems = [];
-    // 시수가 가장 많은 주를 기준으로 하루 교시 안에 들어가야 한다
-    var need = maxHours(subject);
+    // 집중이수제는 회차 시간, 일반은 가장 바쁜 주 기준으로 하루 교시 안에 들어가야 한다
+    var need = hoursOfSession(subject, session);
     if(start + need > PERIOD_COUNT){
-      problems.push('가장 긴 주가 ' + need + '시간(' + planText(subject) + ')이라 하루 교시(' +
-        PERIOD_COUNT + '교시)를 넘어갑니다.');
+      problems.push((isIntensive(subject) ? (session + 1) + '회차가 ' + need + '시간이라'
+                                          : '가장 긴 주가 ' + need + '시간(' + planText(subject) + ')이라') +
+        ' 하루 교시(' + PERIOD_COUNT + '교시)를 넘어갑니다.');
       return problems;
     }
     if(subject.weekEnd > state.totalWeeks){
@@ -1336,7 +1433,7 @@
       return problems;
     }
     var mySpan = spanOf(subject);
-    forEachOverlap(subject, day, start, function(g, p, other){
+    forEachOverlap(subject, session, day, start, function(g, p, other){
       var where = g + '학년 ' + p.day + ' ' + periodLabel(p.start);
       // 같은 학년에서 칸이 겹치면 같은 학생이 두 수업을 듣게 된다.
       // 학적반 A(1~2칸)와 수업반 a(1칸)·b(2~3칸)처럼 형태가 달라도 칸이 겹치면 잡힌다.
@@ -1352,9 +1449,9 @@
   }
 
   // 특정 강의실을 쓸 수 있는지 — 강의실은 학년 공용이라 전체를 본다
-  function checkRoom(subject, day, start, room){
+  function checkRoom(subject, session, day, start, room){
     var problems = [];
-    forEachOverlap(subject, day, start, function(g, p, other){
+    forEachOverlap(subject, session, day, start, function(g, p, other){
       if(p.room !== room) return;
       problems.push(g + '학년 ' + other.name + ' 사용 중 (' + p.day + ' ' + periodLabel(p.start) + ')');
     });
@@ -1555,6 +1652,9 @@
     document.getElementById('fWeekEnd').value = state.totalWeeks;
     document.getElementById('fHours').value = 3;
     document.getElementById('fCredits').value = 3;
+    document.getElementById('fCourseType').value = '일반';   // 기본은 일반
+    document.getElementById('fSessions').value = 2;
+    document.getElementById('fMaxSessionHours').value = MAX_SESSION_HOURS;
     renderClassLabels();          // 선택했던 반 체크도 함께 해제
     renderHoursPlan();
   }
@@ -1570,19 +1670,51 @@
       el.textContent = '주차와 기준 시수를 입력하면 주차별 시간이 계산됩니다.';
       return;
     }
-    var fake = { weekStart: ws, weekEnd: we, hours: hr };
+    var intensive = document.getElementById('fCourseType').value === '집중';
+    document.body.classList.toggle('intensive', intensive);
+
     var need = hr * state.totalWeeks;
     var span = we - ws + 1;
-    var over = maxHours(fake) > PERIOD_COUNT;
-    el.innerHTML =
-      '총 강의시간 <b>' + need + '시간</b> (' + hr + '시간 × ' + state.totalWeeks + '주 기준)' +
-      ' → ' + span + '주로 운영하면 <b>' + escapeHtml(planText(fake)) + '</b>' +
-      (over ? '<br><span class="warn">가장 긴 주가 ' + maxHours(fake) +
-        '시간이라 하루 ' + PERIOD_COUNT + '교시를 넘어갑니다. 주차를 늘려 주세요.</span>' : '');
+    var fake = { weekStart: ws, weekEnd: we, hours: hr };
+    var head = '총 강의시간 <b>' + need + '시간</b> (' + hr + '시간 × ' + state.totalWeeks + '주 기준)';
+
+    if(!intensive){
+      var over = maxHours(fake) > PERIOD_COUNT;
+      el.innerHTML = head +
+        ' → ' + span + '주로 운영하면 <b>' + escapeHtml(planText(fake)) + '</b>' +
+        (over ? '<br><span class="warn">가장 긴 주가 ' + maxHours(fake) +
+          '시간이라 하루 ' + PERIOD_COUNT + '교시를 넘어갑니다. 주차를 늘려 주세요.</span>' : '');
+      return;
+    }
+
+    var n = parseInt(document.getElementById('fSessions').value, 10);
+    var mx = parseInt(document.getElementById('fMaxSessionHours').value, 10);
+    if(isNaN(n) || n < 1 || isNaN(mx) || mx < 1){
+      el.innerHTML = head + '<br>주 횟수와 회차당 최대 시간을 입력해 주세요.';
+      return;
+    }
+    fake.courseType = '집중';
+    fake.sessionsPerWeek = n;
+    var list = sessionHours(fake);
+    var biggest = Math.max.apply(null, list);
+    el.innerHTML = head +
+      ' → ' + span + '주 동안 한 주에 <b>' + maxHours(fake) + '시간</b>' +
+      '<br>주 ' + n + '회로 나누면 <b>' + list.map(function(h, i){
+        return (i + 1) + '회차 ' + h + '시간';
+      }).join(', ') + '</b>' +
+      (biggest > mx
+        ? '<br><span class="warn">회차당 ' + biggest + '시간이 필요해 최대 ' + mx +
+          '시간을 넘습니다. 주 횟수나 주차를 늘려 주세요.</span>'
+        : (biggest > PERIOD_COUNT
+          ? '<br><span class="warn">회차당 ' + biggest + '시간이라 하루 ' + PERIOD_COUNT + '교시를 넘어갑니다.</span>'
+          : '')) +
+      '<br><span style="color:var(--dim)">배치 탭에서 ' + n + '개 회차를 원하는 요일에 각각 놓습니다.</span>';
   }
 
-  ['fWeekStart', 'fWeekEnd', 'fHours'].forEach(function(id){
-    document.getElementById(id).addEventListener('input', renderHoursPlan);
+  ['fWeekStart', 'fWeekEnd', 'fHours', 'fCourseType', 'fSessions', 'fMaxSessionHours'].forEach(function(id){
+    var el = document.getElementById(id);
+    el.addEventListener('input', renderHoursPlan);
+    el.addEventListener('change', renderHoursPlan);
   });
 
   document.getElementById('formResetBtn').addEventListener('click', function(){
@@ -1617,6 +1749,9 @@
     document.getElementById('fWeekEnd').value = s.weekEnd;
     document.getElementById('fHours').value = s.hours;
     document.getElementById('fCredits').value = s.credits;
+    document.getElementById('fCourseType').value = s.courseType || '일반';
+    document.getElementById('fSessions').value = s.sessionsPerWeek || 2;
+    document.getElementById('fMaxSessionHours').value = s.maxSessionHours || MAX_SESSION_HOURS;
     document.getElementById('fContent').value = s.content || '';
     renderHoursPlan();
     setFormMode(true);
@@ -1661,6 +1796,28 @@
     var labels = selectedLabels();
     if(!labels.length){ showToast('반을 하나 이상 선택해 주세요'); return null; }
 
+    var courseType = document.getElementById('fCourseType').value;
+    var sessions = parseInt(document.getElementById('fSessions').value, 10);
+    var maxSession = parseInt(document.getElementById('fMaxSessionHours').value, 10);
+
+    if(courseType === '집중'){
+      if(isNaN(sessions) || sessions < 1 || sessions > 5){
+        showToast('주 몇 회는 1~5 사이로 입력해 주세요'); return null;
+      }
+      if(isNaN(maxSession) || maxSession < 1 || maxSession > MAX_SESSION_HOURS){
+        showToast('회차당 최대 시간은 1~' + MAX_SESSION_HOURS + ' 사이로 입력해 주세요'); return null;
+      }
+      // 회차로 나눠도 한 번에 담을 수 없으면 저장하지 않는다
+      var probe = { weekStart: weekStart, weekEnd: weekEnd, hours: hours,
+                    courseType: '집중', sessionsPerWeek: sessions };
+      var biggest = Math.max.apply(null, sessionHours(probe));
+      if(biggest > maxSession){
+        showToast('회차당 ' + biggest + '시간이 필요해 최대 ' + maxSession +
+          '시간을 넘습니다.\n주 횟수를 늘리거나 주차를 늘려 주세요', true);
+        return null;
+      }
+    }
+
     return {
       labels: labels,
       base: {
@@ -1673,6 +1830,9 @@
         weekEnd: weekEnd,
         hours: hours,
         credits: credits,
+        courseType: courseType,
+        sessionsPerWeek: courseType === '집중' ? sessions : 1,
+        maxSessionHours: courseType === '집중' ? maxSession : MAX_SESSION_HOURS,
         content: content
       }
     };
@@ -1692,17 +1852,31 @@
     return null;
   }
 
-  // 수정 후 기존 배치가 규칙에 어긋나면(시수·주차·반·학년 변경 등) 배치를 해제한다
+  // 수정 후 기존 배치가 규칙에 어긋나면(시수·주차·반·학년·회차 변경 등) 배치를 해제한다
   function revalidatePlacement(subjectId){
-    var p = findPlacement(subjectId);
-    if(!p) return null;
     var s = subjectById(subjectId);
-    var reasons = checkBase(s.grade, s, p.day, p.start)
-      .concat(checkRoom(s, p.day, p.start, p.room));
-    if(!reasons.length) return null;
+    if(!s) return null;
+    var n = sessionCount(s);
+    var reason = null;
 
-    state.placements = state.placements.filter(function(x){ return x.subjectId !== subjectId; });
-    return reasons[0];
+    placementsOfSubject(subjectId).slice().forEach(function(p){
+      var session = p.session || 0;
+      var why = null;
+      if(session >= n){
+        why = '회차가 ' + n + '회로 줄었습니다';        // 주 N회를 줄이면 남는 회차는 뺀다
+      } else {
+        var list = checkBase(s.grade, s, session, p.day, p.start)
+          .concat(checkRoom(s, session, p.day, p.start, p.room));
+        if(list.length) why = list[0];
+      }
+      if(why){
+        if(!reason) reason = why;
+        state.placements = state.placements.filter(function(x){
+          return !(x.subjectId === subjectId && (x.session || 0) === session);
+        });
+      }
+    });
+    return reason;
   }
 
   document.getElementById('addSubjectBtn').addEventListener('click', function(){
@@ -1855,7 +2029,6 @@
         frag.appendChild(gtr);
       }
 
-      var p = findPlacement(s.id);
       var tr = document.createElement('tr');
       if(s.id === editingId) tr.style.background = 'rgba(124,92,255,.12)';
       tr.innerHTML =
@@ -1865,11 +2038,12 @@
         '<td>' + escapeHtml(s.classType) + ' ' + escapeHtml(s.classLabel) + '</td>' +
         '<td>' + escapeHtml(s.professor) + '</td>' +
         '<td>' + escapeHtml(weekLabel(s)) + '</td>' +
-        '<td title="총 ' + requiredHours(s) + '시간">' + escapeHtml(planText(s)) + '</td>' +
+        '<td title="총 ' + requiredHours(s) + '시간">' + escapeHtml(sessionText(s)) +
+          (isIntensive(s) ? '<br><span style="color:var(--dim);font-size:11.5px">집중이수제</span>' : '') + '</td>' +
         '<td>' + s.credits + '</td>' +
-        '<td>' + (p
-            ? '<span class="badge badge-placed">' + escapeHtml(p.day) + ' ' + periodLabel(p.start) +
-              ' · ' + escapeHtml(p.room || '-') + '</span>'
+        '<td>' + (placementText(s)
+            ? '<span class="badge ' + (isFullyPlaced(s) ? 'badge-placed' : '') + '">' +
+              escapeHtml(placementText(s)) + '</span>'
             : '<span class="badge">미배치</span>') + '</td>' +
         '<td class="td-content" title="' + escapeHtml(s.content) + '">' + escapeHtml(s.content) + '</td>';
       var tdAct = document.createElement('td');
@@ -2021,6 +2195,7 @@
    * dragover 에서는 dataTransfer 를 읽을 수 없으므로 끌기 시작할 때
    * 대상 과목을 기억해 두고, 실제로 차지할 영역만큼 칠해 준다. */
   var dragSubjectId = null;
+  var dragSession = 0;                 // 집중이수제에서 끌고 있는 회차
 
   function clearPreview(){
     Array.prototype.forEach.call(document.querySelectorAll('.tt-preview'), function(el){
@@ -2060,8 +2235,8 @@
     var scroll = boardEl.querySelector('.board-scroll');
     var table = boardEl.querySelector('.tt-table');
     var rows = table.querySelectorAll('tbody tr');
-    // 이 구간에서의 시수만큼 미리보기를 그린다
-    var lastPeriod = period + maxHours(s) - 1;
+    // 끌고 있는 회차가 차지할 시간만큼 미리보기를 그린다
+    var lastPeriod = period + hoursOfSession(s, dragSession) - 1;
     if(lastPeriod >= rows.length) lastPeriod = rows.length - 1;
 
     var box = scroll.querySelector('.tt-preview');
@@ -2084,29 +2259,37 @@
     box.style.top = (top - base.top + scroll.scrollTop) + 'px';
     box.style.width = (right - left) + 'px';
     box.style.height = (bottom - top) + 'px';
-    box.classList.toggle('bad', checkBase(currentGrade, s, day, period).length > 0);
+    box.classList.toggle('bad', checkBase(currentGrade, s, dragSession, day, period).length > 0);
     box.style.display = 'block';
   }
 
   document.addEventListener('dragend', function(){
     dragSubjectId = null;
+    dragSession = 0;
     clearPreview();
   });
 
-  function makeChip(subject){
+  function makeChip(subject, session){
     var chip = document.createElement('div');
     chip.className = 'subject-chip';
     chip.draggable = true;
     chip.dataset.sid = subject.id;
+    chip.dataset.session = session;
+    var intensive = isIntensive(subject);
     // 강의실은 배치할 때 정하므로 미배치 상태에서는 표시할 값이 없다
     chip.innerHTML =
-      '<span class="chip-name">' + escapeHtml(subject.name) + '</span>' +
+      '<span class="chip-name">' + escapeHtml(subject.name) +
+        (intensive ? ' <span class="chip-session">' + (session + 1) + '회차</span>' : '') + '</span>' +
       '<span class="chip-meta">' + escapeHtml(subject.classType + '반 ' + subject.classLabel) +
         ' · ' + escapeHtml(subject.professor) + ' · ' + escapeHtml(weekLabel(subject)) + '</span>' +
-      '<span class="chip-meta">' + escapeHtml(planText(subject)) + '</span>';
+      '<span class="chip-meta">' +
+        (intensive
+          ? '집중이수제 · ' + hoursOfSession(subject, session) + '시간'
+          : escapeHtml(planText(subject))) + '</span>';
     chip.addEventListener('dragstart', function(e){
       dragSubjectId = subject.id;
-      e.dataTransfer.setData('text/plain', subject.id);
+      dragSession = session;
+      e.dataTransfer.setData('text/plain', subject.id + '#' + session);
       e.dataTransfer.effectAllowed = 'move';
     });
     return chip;
@@ -2115,8 +2298,13 @@
   function renderPool(){
     var list = document.getElementById('poolList');
     list.innerHTML = '';
-    var pool = state.subjects.filter(function(s){
-      return s.grade === currentGrade && !findPlacement(s.id);
+    // 집중이수제는 회차마다 따로 놓아야 하므로 회차 수만큼 칩을 만든다
+    var pool = [];
+    state.subjects.forEach(function(s){
+      if(s.grade !== currentGrade) return;
+      for(var i = 0; i < sessionCount(s); i++){
+        if(!findPlacement(s.id, i)) pool.push({ subject: s, session: i });
+      }
     });
     document.getElementById('poolCount').textContent = pool.length;
     if(!pool.length){
@@ -2127,7 +2315,7 @@
       list.appendChild(e);
       return;
     }
-    pool.forEach(function(s){ list.appendChild(makeChip(s)); });
+    pool.forEach(function(x){ list.appendChild(makeChip(x.subject, x.session)); });
   }
 
   function renderBoards(){
@@ -2280,16 +2468,21 @@
                   box.draggable = true;
                   box.style.background = color.bg;
                   box.style.border = '1px solid ' + color.border;
+                  var sess = item.placement.session || 0;
                   box.innerHTML =
-                    '<span class="p-name">' + escapeHtml(s.name) + '</span>' +
+                    '<span class="p-name">' + escapeHtml(s.name) +
+                      (isIntensive(s) ? ' <span class="chip-session">' + (sess + 1) + '회차</span>' : '') + '</span>' +
                     '<span class="p-meta">' + escapeHtml(s.classType + '반 ' + s.classLabel) + '</span>' +
                     '<span class="p-meta">' + escapeHtml(s.professor) + '</span>' +
                     '<span class="p-meta">' + escapeHtml(item.placement.room || '-') + '</span>' +
-                    '<span class="p-weeks">' + escapeHtml(planText(s)) + '</span>';
-                  (function(sid){
+                    '<span class="p-weeks">' + escapeHtml(
+                      isIntensive(s) ? weekLabel(s) + ' · ' + hoursOfSession(s, sess) + '시간'
+                                     : planText(s)) + '</span>';
+                  (function(sid, session){
                     box.addEventListener('dragstart', function(e){
                       dragSubjectId = sid;
-                      e.dataTransfer.setData('text/plain', sid);
+                      dragSession = session;
+                      e.dataTransfer.setData('text/plain', sid + '#' + session);
                       e.dataTransfer.effectAllowed = 'move';
                     });
                     var del = document.createElement('button');
@@ -2299,10 +2492,10 @@
                     del.textContent = '×';
                     del.addEventListener('click', function(ev){
                       ev.stopPropagation();
-                      unplace(sid);
+                      unplace(sid, session);
                     });
                     box.appendChild(del);
-                  })(s.id);
+                  })(s.id, sess);
                   stack.appendChild(box);
                 });
                 tr.appendChild(td);
@@ -2324,8 +2517,11 @@
                 slot.addEventListener('drop', function(e){
                   e.preventDefault();
                   clearPreview();
-                  var sid = e.dataTransfer.getData('text/plain');
-                  if(sid) place(sid, d, period);
+                  var raw = e.dataTransfer.getData('text/plain');
+                  if(raw){
+                    var d2 = parseDragId(raw);
+                    place(d2.subjectId, d2.session, d, period);
+                  }
                 });
               })(day, boardIdx);
               tr.appendChild(td);
@@ -2345,18 +2541,24 @@
   var pendingDrop = null;
   var roomPickOverlay = document.getElementById('roomPickOverlay');
 
-  function place(subjectId, day, start){
-    requireUnlock(function(){ doPlace(subjectId, day, start); });
+  // "과목id#회차" 형태로 넘어온 값을 나눈다 (예전 형식은 회차 0)
+  function parseDragId(raw){
+    var parts = String(raw).split('#');
+    return { subjectId: parts[0], session: parts.length > 1 ? Number(parts[1]) : 0 };
   }
 
-  function doPlace(subjectId, day, start){
+  function place(subjectId, session, day, start){
+    requireUnlock(function(){ doPlace(subjectId, session, day, start); });
+  }
+
+  function doPlace(subjectId, session, day, start){
     var subject = subjectById(subjectId);
     if(!subject) return;
     if(subject.grade !== currentGrade){
       showToast(subject.grade + '학년 과목은 ' + subject.grade + '학년 시간표에만 배치할 수 있습니다', true);
       return;
     }
-    var problems = checkBase(currentGrade, subject, day, start);
+    var problems = checkBase(currentGrade, subject, session, day, start);
     if(problems.length){
       showToast('배치할 수 없습니다\n· ' + problems.join('\n· '), true);
       return;
@@ -2365,24 +2567,25 @@
       showToast('사용할 강의실을 먼저 등록해 주세요', true);
       return;
     }
-    pendingDrop = { subjectId: subjectId, day: day, start: start };
-    openRoomPicker(subject, day, start);
+    pendingDrop = { subjectId: subjectId, session: session, day: day, start: start };
+    openRoomPicker(subject, session, day, start);
   }
 
-  function openRoomPicker(subject, day, start){
-    var h = maxHours(subject);
+  function openRoomPicker(subject, session, day, start){
+    var h = hoursOfSession(subject, session);
     var last = start + h - 1;
     document.getElementById('roomPickDesc').textContent =
-      subject.name + ' (' + subject.classType + '반 ' + subject.classLabel + ') · ' +
+      subject.name + ' (' + subject.classType + '반 ' + subject.classLabel + ')' +
+      (isIntensive(subject) ? ' · ' + (session + 1) + '회차' : '') + ' · ' +
       day + '요일 ' + periodLabel(start) +
       (h > 1 ? '~' + periodLabel(last) : '') +
-      ' · ' + weekLabel(subject) + ' (' + planText(subject) + ')' +
+      ' · ' + weekLabel(subject) + ' (' + sessionText(subject) + ')' +
       ' — 사용할 강의실을 고르세요.';
 
     var list = document.getElementById('roomPickList');
     list.innerHTML = '';
     state.rooms.forEach(function(room){
-      var busy = checkRoom(subject, day, start, room);
+      var busy = checkRoom(subject, session, day, start, room);
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'room-pick';
@@ -2414,32 +2617,39 @@
     var subject = subjectById(d.subjectId);
     if(!subject){ closeRoomPicker(); return; }
 
-    // 기존 배치가 있으면 옮기는 것으로 처리
-    state.placements = state.placements.filter(function(p){ return p.subjectId !== d.subjectId; });
+    // 같은 회차가 이미 놓여 있으면 옮기는 것으로 처리
+    state.placements = state.placements.filter(function(p){
+      return !(p.subjectId === d.subjectId && (p.session || 0) === d.session);
+    });
     state.placements.push({
-      subjectId: d.subjectId, day: d.day, start: d.start, room: room
+      subjectId: d.subjectId, session: d.session, day: d.day, start: d.start, room: room
     });
     closeRoomPicker();
     saveState();
     renderPool();
     renderBoards();
     renderSubjectList();
-    showToast(subject.name + ' → ' + d.day + '요일 ' + periodLabel(d.start) + ' · ' + room);
+    showToast(subject.name + (isIntensive(subject) ? ' ' + (d.session + 1) + '회차' : '') +
+      ' → ' + d.day + '요일 ' + periodLabel(d.start) + ' · ' + room);
   }
 
-  function unplace(subjectId){
-    requireUnlock(function(){ doUnplace(subjectId); });
+  function unplace(subjectId, session){
+    requireUnlock(function(){ doUnplace(subjectId, session); });
   }
 
-  function doUnplace(subjectId){
-    if(!findPlacement(subjectId)) return;
-    state.placements = state.placements.filter(function(p){ return p.subjectId !== subjectId; });
+  function doUnplace(subjectId, session){
+    session = session || 0;
+    if(!findPlacement(subjectId, session)) return;
+    state.placements = state.placements.filter(function(p){
+      return !(p.subjectId === subjectId && (p.session || 0) === session);
+    });
     saveState();
     renderPool();
     renderBoards();
     renderSubjectList();
     var s = subjectById(subjectId);
-    showToast((s ? s.name : '과목') + ' 배치를 해제했습니다');
+    showToast((s ? s.name : '과목') + (s && isIntensive(s) ? ' ' + (session + 1) + '회차' : '') +
+      ' 배치를 해제했습니다');
   }
 
   document.getElementById('clearGradeBtn').addEventListener('click', function(){
@@ -2506,7 +2716,7 @@
         peak: peak,
         totalHours: totalHours,
         totalCredits: totalCredits,
-        placedCount: subjects.filter(function(s){ return !!findPlacement(s.id); }).length
+        placedCount: subjects.filter(isFullyPlaced).length
       };
     });
   }
@@ -2561,18 +2771,17 @@
       body.className = 'prof-body';
 
       var rows = l.subjects.map(function(s){
-        var p = findPlacement(s.id);
         return '<tr>' +
           '<td>' + escapeHtml(s.semester) + '학기</td>' +
           '<td>' + escapeHtml(s.grade) + '학년</td>' +
           '<td class="subj">' + escapeHtml(s.name) + '</td>' +
           '<td>' + escapeHtml(s.classType + '반 ' + s.classLabel) + '</td>' +
           '<td>' + escapeHtml(weekLabel(s)) + '</td>' +
-          '<td>' + escapeHtml(planText(s)) + '</td>' +
+          '<td>' + escapeHtml(sessionText(s)) + '</td>' +
           '<td>' + requiredHours(s) + '시간</td>' +
           '<td>' + s.credits + '</td>' +
-          '<td>' + (p
-            ? escapeHtml(p.day) + ' ' + periodLabel(p.start) + ' · ' + escapeHtml(p.room || '-')
+          '<td>' + (placementText(s)
+            ? escapeHtml(placementText(s))
             : '<span style="color:var(--dim)">미배치</span>') + '</td>' +
           '</tr>';
       }).join('');
@@ -2629,14 +2838,12 @@
       ws['!cols'] = autoCols(rows);
       XLSX.utils.book_append_sheet(wb, ws, '교수별 시수');
 
-      var detail = [['교수명', '학기', '학년', '과목명', '반형태', '반', '주차', '주차별 시수', '총시간', '학점', '배치']];
+      var detail = [['교수명', '학기', '학년', '과목명', '반형태', '반', '과목형태', '주차', '주차별 시수', '총시간', '학점', '배치']];
       professorLoads(document.getElementById('loadSearchInput').value).forEach(function(l){
         l.subjects.forEach(function(s){
-          var p = findPlacement(s.id);
           detail.push([l.professor, s.semester + '학기', s.grade + '학년', s.name,
-            s.classType + '반', s.classLabel, weekLabel(s), planText(s),
-            requiredHours(s), s.credits,
-            p ? (p.day + ' ' + periodLabel(p.start) + ' · ' + (p.room || '-')) : '미배치']);
+            s.classType + '반', s.classLabel, s.courseType || '일반', weekLabel(s), sessionText(s),
+            requiredHours(s), s.credits, placementText(s) || '미배치']);
         });
       });
       var ws2 = XLSX.utils.aoa_to_sheet(detail);
@@ -2651,19 +2858,18 @@
   });
 
   function subjectSheetRows(){
-    var rows = [['학기', '학년', '과목명', '반형태', '반', '교수명', '시작주차', '종료주차', '주수',
-                 '기준시수', '총시간', '주차별 시수', '학점', '배치', '요일', '교시', '강의실', '교육내용']];
+    var rows = [['학기', '학년', '과목명', '반형태', '반', '교수명', '과목형태', '주횟수',
+                 '시작주차', '종료주차', '주수', '기준시수', '총시간', '주차별 시수', '학점',
+                 '배치상태', '배치내역', '교육내용']];
     state.subjects.forEach(function(s){
-      var p = findPlacement(s.id);
-      var mh = maxHours(s);
       rows.push([
         s.semester + '학기', s.grade + '학년', s.name, s.classType + '반', s.classLabel,
-        s.professor, s.weekStart, s.weekEnd, weekCount(s),
-        s.hours, requiredHours(s), planText(s), s.credits,
-        p ? '배치됨' : '미배치',
-        p ? p.day : '',
-        p ? periodLabel(p.start) + (mh > 1 ? '~' + periodLabel(p.start + mh - 1) : '') : '',
-        p ? (p.room || '') : '',
+        s.professor, s.courseType || '일반',
+        isIntensive(s) ? sessionCount(s) + '회' : '',
+        s.weekStart, s.weekEnd, weekCount(s),
+        s.hours, requiredHours(s), sessionText(s), s.credits,
+        isFullyPlaced(s) ? '배치됨' : (placementText(s) ? '일부 배치' : '미배치'),
+        placementText(s),
         s.content
       ]);
     });
@@ -2717,7 +2923,11 @@
             row.push(g.items.map(function(item){
               var s = item.subject;
               return s.name + '\n' + s.classType + '반 ' + s.classLabel + '\n' + s.professor +
-                '\n' + (item.placement.room || '-') + '\n' + planText(s);
+                '\n' + (item.placement.room || '-') + '\n' +
+                (isIntensive(s)
+                  ? ((item.placement.session || 0) + 1) + '회차 ' +
+                    hoursOfSession(s, item.placement.session || 0) + '시간 · ' + weekLabel(s)
+                  : planText(s));
             }).join('\n──────\n'));
             merges.push({
               s: { r: 3 + i, c: colOf(di, g.from) },
