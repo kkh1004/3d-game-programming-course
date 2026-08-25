@@ -263,6 +263,44 @@
   }
   .lock-state.is-open{color:#8ef0c8;border-color:rgba(61,220,151,.4)}
   .lock-note{font-size:11.5px;font-weight:500;color:var(--dim);margin-left:6px}
+
+  /* ---------- 교수별 시수 ---------- */
+  .load-search{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:20px}
+  .load-search .input-field{flex:1 1 260px;max-width:360px}
+  .load-count{font-size:13px;color:var(--muted)}
+  .prof-card{
+    border:1px solid var(--stroke);border-radius:14px;background:rgba(255,255,255,.03);
+    margin-bottom:16px;overflow:hidden;
+  }
+  .prof-head{
+    display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:12px;
+    padding:14px 18px;border-bottom:1px solid var(--stroke);
+    background:linear-gradient(135deg,rgba(124,92,255,.16),rgba(34,211,238,.08));
+  }
+  .prof-name{font-size:15px;font-weight:750}
+  .prof-stats{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+  .prof-stats b{color:#8ef0c8;font-weight:700}
+  .prof-body{padding:14px 18px}
+  .prof-body table{width:100%;border-collapse:collapse;font-size:12.5px}
+  .prof-body th{
+    text-align:left;color:var(--dim);font-weight:650;padding:6px 8px;
+    border-bottom:1px solid var(--stroke);white-space:nowrap;
+  }
+  .prof-body td{padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.05);color:var(--muted)}
+  .prof-body tr:last-child td{border-bottom:none}
+  .prof-body .subj{color:#e7e8ee;font-weight:650}
+
+  .week-load{display:flex;gap:3px;flex-wrap:wrap;margin-top:14px}
+  .week-cell{
+    min-width:34px;text-align:center;border-radius:7px;padding:5px 4px;
+    background:rgba(255,255,255,.05);border:1px solid var(--stroke);
+    font-size:11px;line-height:1.35;color:var(--muted);
+  }
+  .week-cell b{display:block;color:#e7e8ee;font-size:12.5px;font-weight:700}
+  .week-cell.peak{border-color:rgba(255,92,157,.6);background:rgba(255,92,157,.16)}
+  .week-cell.peak b{color:#ff9ec4}
+  .week-cell.zero{opacity:.4}
+  .week-load-label{font-size:12px;color:var(--dim);margin-top:14px}
   .ver-badge{
     margin-left:10px;padding:2px 9px;border-radius:100px;
     background:rgba(124,92,255,.22);border:1px solid rgba(124,92,255,.45);
@@ -426,6 +464,7 @@
   <div class="top-tabs">
     <button type="button" class="top-tab-btn active" data-tab="input">과목 입력</button>
     <button type="button" class="top-tab-btn" data-tab="timetable">시간표 배치</button>
+    <button type="button" class="top-tab-btn" data-tab="load">교수별 시수</button>
   </div>
 </header>
 
@@ -590,6 +629,23 @@
       </div>
     </div>
 
+    <!-- ================= 탭 3 : 교수별 시수 ================= -->
+    <div class="tab-view" id="tab-load">
+      <div class="section-head">
+        <h2>교수별 수업시수</h2>
+        <button type="button" class="ghost-btn" id="exportLoadBtn">내보내기</button>
+      </div>
+
+      <div class="load-search">
+        <input type="text" id="loadSearchInput" class="input-field" placeholder="교수명 또는 과목명으로 검색">
+        <button type="button" class="ghost-btn" id="loadSearchClearBtn">검색 지우기</button>
+        <span class="load-count" id="loadCount"></span>
+      </div>
+
+      <div id="loadEmptyState" class="empty-state">먼저 "과목 입력" 탭에서 과목을 등록해 주세요.</div>
+      <div id="loadResult"></div>
+    </div>
+
   </section>
 </main>
 
@@ -671,7 +727,7 @@
 (function(){
   /* 버전 — 올릴 때마다 뒷자리를 1씩 증가시킨다.
    * 앞자리는 지정이 있을 때만 올린다. */
-  var APP_VERSION = '1.0';
+  var APP_VERSION = '1.1';
 
   var DAYS = ['월', '화', '수', '목', '금'];
   var PERIOD_COUNT = 9;             // 9:30 시작, 50분 수업 + 10분 휴식
@@ -1042,6 +1098,7 @@
     renderSubjectList();
     var activeBtn = document.querySelector('.top-tab-btn.active');
     if(activeBtn && activeBtn.dataset.tab === 'timetable') renderTimetableTab();
+    if(activeBtn && activeBtn.dataset.tab === 'load') renderLoadTab();
     updateSyncUi();
   }
 
@@ -1434,6 +1491,7 @@
       document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
       document.body.classList.toggle('tt-wide', btn.dataset.tab === 'timetable');
       if(btn.dataset.tab === 'timetable') renderTimetableTab();
+      if(btn.dataset.tab === 'load') renderLoadTab();
     });
   });
 
@@ -2383,6 +2441,192 @@
     var d = new Date();
     return String(d.getFullYear()) + pad2(d.getMonth() + 1) + pad2(d.getDate());
   }
+
+  /* ============================================================
+   * 교수별 수업시수
+   *   교수명 또는 과목명으로 찾아, 교수마다 담당 과목과 주차별 부담을 본다.
+   *   시수가 주차마다 달라질 수 있으므로 주별로 합산해서 가장 바쁜 주도 함께 보여준다.
+   * ============================================================ */
+  function professorLoads(query){
+    var q = (query || '').trim().toLowerCase();
+    var byName = {};
+
+    state.subjects.forEach(function(s){
+      var prof = (s.professor || '(교수명 없음)');
+      if(q && prof.toLowerCase().indexOf(q) === -1 && s.name.toLowerCase().indexOf(q) === -1) return;
+      if(!byName[prof]) byName[prof] = [];
+      byName[prof].push(s);
+    });
+
+    return Object.keys(byName).sort().map(function(prof){
+      var subjects = byName[prof];
+      var weeks = [];
+      for(var w = 1; w <= state.totalWeeks; w++) weeks.push(0);
+
+      var totalHours = 0, totalCredits = 0;
+      subjects.forEach(function(s){
+        totalHours += requiredHours(s);
+        totalCredits += Number(s.credits) || 0;
+        for(var w = s.weekStart; w <= s.weekEnd; w++){
+          if(w >= 1 && w <= state.totalWeeks) weeks[w - 1] += hoursAtWeek(s, w);
+        }
+      });
+
+      var peak = 0;
+      weeks.forEach(function(h){ if(h > peak) peak = h; });
+
+      return {
+        professor: prof,
+        subjects: subjects.slice().sort(function(a, b){
+          return (a.grade + a.name + a.classLabel).localeCompare(b.grade + b.name + b.classLabel);
+        }),
+        weeks: weeks,
+        peak: peak,
+        totalHours: totalHours,
+        totalCredits: totalCredits,
+        placedCount: subjects.filter(function(s){ return !!findPlacement(s.id); }).length
+      };
+    });
+  }
+
+  function renderLoadTab(){
+    var empty = document.getElementById('loadEmptyState');
+    var result = document.getElementById('loadResult');
+    var countEl = document.getElementById('loadCount');
+    var query = document.getElementById('loadSearchInput').value;
+
+    if(!state.subjects.length){
+      empty.style.display = 'block';
+      empty.textContent = '먼저 "과목 입력" 탭에서 과목을 등록해 주세요.';
+      result.innerHTML = '';
+      countEl.textContent = '';
+      return;
+    }
+
+    var loads = professorLoads(query);
+    if(!loads.length){
+      empty.style.display = 'block';
+      empty.textContent = '"' + query.trim() + '" 와(과) 일치하는 교수·과목이 없습니다.';
+      result.innerHTML = '';
+      countEl.textContent = '검색 결과가 없습니다';
+      return;
+    }
+    empty.style.display = 'none';
+
+    var subjCount = loads.reduce(function(n, l){ return n + l.subjects.length; }, 0);
+    countEl.textContent = (query.trim() ? '검색: ' : '전체: ') +
+      '교수 ' + loads.length + '명 · 과목 ' + subjCount + '개';
+
+    var frag = document.createDocumentFragment();
+    loads.forEach(function(l){
+      var card = document.createElement('div');
+      card.className = 'prof-card';
+
+      var head = document.createElement('div');
+      head.className = 'prof-head';
+      head.innerHTML =
+        '<span class="prof-name">' + escapeHtml(l.professor) + '</span>' +
+        '<span class="prof-stats">' +
+          '<span>담당 <b>' + l.subjects.length + '</b>과목</span>' +
+          '<span>배치 <b>' + l.placedCount + '</b>/' + l.subjects.length + '</span>' +
+          '<span>총 <b>' + l.totalHours + '</b>시간</span>' +
+          '<span>학점 합계 <b>' + l.totalCredits + '</b></span>' +
+          '<span>가장 바쁜 주 <b>' + l.peak + '</b>시간</span>' +
+        '</span>';
+      card.appendChild(head);
+
+      var body = document.createElement('div');
+      body.className = 'prof-body';
+
+      var rows = l.subjects.map(function(s){
+        var p = findPlacement(s.id);
+        return '<tr>' +
+          '<td>' + escapeHtml(s.semester) + '학기</td>' +
+          '<td>' + escapeHtml(s.grade) + '학년</td>' +
+          '<td class="subj">' + escapeHtml(s.name) + '</td>' +
+          '<td>' + escapeHtml(s.classType + '반 ' + s.classLabel) + '</td>' +
+          '<td>' + escapeHtml(weekLabel(s)) + '</td>' +
+          '<td>' + escapeHtml(planText(s)) + '</td>' +
+          '<td>' + requiredHours(s) + '시간</td>' +
+          '<td>' + s.credits + '</td>' +
+          '<td>' + (p
+            ? escapeHtml(p.day) + ' ' + periodLabel(p.start) + ' · ' + escapeHtml(p.room || '-')
+            : '<span style="color:var(--dim)">미배치</span>') + '</td>' +
+          '</tr>';
+      }).join('');
+
+      body.innerHTML =
+        '<table><thead><tr>' +
+          '<th>학기</th><th>학년</th><th>과목명</th><th>반</th><th>주차</th>' +
+          '<th>주차별 시수</th><th>총시간</th><th>학점</th><th>배치</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table>' +
+        '<div class="week-load-label">주차별 수업시간 (가장 바쁜 주 ' + l.peak + '시간)</div>';
+
+      var wl = document.createElement('div');
+      wl.className = 'week-load';
+      l.weeks.forEach(function(h, i){
+        var cell = document.createElement('div');
+        cell.className = 'week-cell' + (h === l.peak && h > 0 ? ' peak' : '') + (h === 0 ? ' zero' : '');
+        cell.innerHTML = '<b>' + h + '</b>' + (i + 1) + '주';
+        wl.appendChild(cell);
+      });
+      body.appendChild(wl);
+
+      card.appendChild(body);
+      frag.appendChild(card);
+    });
+
+    result.innerHTML = '';
+    result.appendChild(frag);
+  }
+
+  document.getElementById('loadSearchInput').addEventListener('input', renderLoadTab);
+  document.getElementById('loadSearchClearBtn').addEventListener('click', function(){
+    var input = document.getElementById('loadSearchInput');
+    input.value = '';
+    renderLoadTab();
+    input.focus();
+  });
+
+  function loadSheetRows(){
+    var rows = [['교수명', '담당과목수', '총시간', '학점합계', '가장바쁜주(시간)']];
+    var loads = professorLoads(document.getElementById('loadSearchInput').value);
+    for(var w = 1; w <= state.totalWeeks; w++) rows[0].push(w + '주');
+    loads.forEach(function(l){
+      rows.push([l.professor, l.subjects.length, l.totalHours, l.totalCredits, l.peak].concat(l.weeks));
+    });
+    return rows;
+  }
+
+  document.getElementById('exportLoadBtn').addEventListener('click', function(){
+    if(!state.subjects.length){ showToast('내보낼 과목이 없습니다'); return; }
+    try {
+      var wb = XLSX.utils.book_new();
+      var rows = loadSheetRows();
+      var ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = autoCols(rows);
+      XLSX.utils.book_append_sheet(wb, ws, '교수별 시수');
+
+      var detail = [['교수명', '학기', '학년', '과목명', '반형태', '반', '주차', '주차별 시수', '총시간', '학점', '배치']];
+      professorLoads(document.getElementById('loadSearchInput').value).forEach(function(l){
+        l.subjects.forEach(function(s){
+          var p = findPlacement(s.id);
+          detail.push([l.professor, s.semester + '학기', s.grade + '학년', s.name,
+            s.classType + '반', s.classLabel, weekLabel(s), planText(s),
+            requiredHours(s), s.credits,
+            p ? (p.day + ' ' + periodLabel(p.start) + ' · ' + (p.room || '-')) : '미배치']);
+        });
+      });
+      var ws2 = XLSX.utils.aoa_to_sheet(detail);
+      ws2['!cols'] = autoCols(detail);
+      XLSX.utils.book_append_sheet(wb, ws2, '과목별 상세');
+
+      XLSX.writeFile(wb, '교수별시수_' + todayStamp() + '.xlsx');
+      showToast('교수별 시수를 엑셀로 저장했습니다');
+    } catch(e){
+      showToast('엑셀 저장에 실패했습니다', true);
+    }
+  });
 
   function subjectSheetRows(){
     var rows = [['학기', '학년', '과목명', '반형태', '반', '교수명', '시작주차', '종료주차', '주수',
