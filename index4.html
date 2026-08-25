@@ -246,6 +246,10 @@
   }
   .tt-preview.bad{background:rgba(255,92,157,.24);box-shadow:inset 0 0 0 2px rgba(255,92,157,.85)}
   td.occupied{padding:0}
+  /* 한 자리를 주차만 달리해 나눠 쓰는 경우 — 블록을 위아래로 쌓는다.
+   * flex 는 td 가 아니라 안쪽 상자에 걸어야 rowspan 높이가 유지된다. */
+  .stack{height:100%;display:flex;flex-direction:column;gap:2px}
+  .stack .placed{flex:1 1 0;min-height:0}
   .placed{
     height:100%;border-radius:7px;padding:5px 6px;
     display:flex;flex-direction:column;gap:1px;position:relative;cursor:grab;
@@ -727,7 +731,7 @@
 (function(){
   /* 버전 — 올릴 때마다 뒷자리를 1씩 증가시킨다.
    * 앞자리는 지정이 있을 때만 올린다. */
-  var APP_VERSION = '1.1';
+  var APP_VERSION = '1.2';
 
   var DAYS = ['월', '화', '수', '목', '금'];
   var PERIOD_COUNT = 9;             // 9:30 시작, 50분 수업 + 10분 휴식
@@ -1163,30 +1167,48 @@
    * 예) 1~15, 1~8, 9~15 짜리가 섞여 있으면 → 1~8 / 9~15 두 구간.
    *     8주부터 시작하는 과목이 있으면    → 1~7 / 8~15 두 구간.
    * 한 구간에는 그 주차와 조금이라도 겹치는 과목을 모두 보여준다. */
+  /* 학년마다 시간표는 한 장만 쓴다.
+   * 주차가 다른 과목(예: 1~15주 안에서 8~15주만 하는 과목)도 같은 표에 넣고,
+   * 언제 진행하는지는 블록 안에 글자로 적는다. */
   function boardsFor(grade){
-    var total = state.totalWeeks;
-    var cuts = { 1: true };
-    cuts[total + 1] = true;
+    return [{ from: 1, to: state.totalWeeks }];
+  }
 
-    placementsOfGrade(grade).forEach(function(p){
+  /* 같은 자리에 겹쳐 놓인 배치들을 한 칸으로 묶는다.
+   * 주차가 겹치지 않으면 나란히 놓을 수 있으므로 한 칸 안에 위아래로 쌓는다. */
+  function groupPlacements(placements){
+    var groups = [];
+    placements.forEach(function(p){
       var s = subjectById(p.subjectId);
       if(!s) return;
-      // 주차 시작·끝뿐 아니라 시수가 바뀌는 지점에서도 구간을 자른다
-      // (예: 1~12주 과목이 1~9주 4시간 / 10~12주 3시간이면 10주에서 갈린다)
-      weekPlan(s).forEach(function(seg){
-        if(seg.from >= 1 && seg.from <= total) cuts[seg.from] = true;
-        if(seg.to + 1 >= 1 && seg.to + 1 <= total) cuts[seg.to + 1] = true;
-      });
-    });
+      var sp = spanOf(s);
+      var hrs = maxHours(s);
 
-    var points = Object.keys(cuts).map(Number).sort(function(a, b){ return a - b; });
-    var boards = [];
-    for(var i = 0; i < points.length - 1; i++){
-      var from = points[i], to = points[i + 1] - 1;
-      if(to >= from) boards.push({ from: from, to: to });
-    }
-    if(!boards.length) boards.push({ from: 1, to: total });
-    return boards;
+      var target = null;
+      for(var i = 0; i < groups.length; i++){
+        var g = groups[i];
+        if(g.day !== p.day) continue;
+        if(sp[1] < g.from || g.to < sp[0]) continue;                       // 칸이 안 겹침
+        if(p.start + hrs - 1 < g.start || g.start + g.hours - 1 < p.start) continue;  // 교시가 안 겹침
+        target = g;
+        break;
+      }
+
+      if(target){
+        target.items.push({ subject: s, placement: p, hours: hrs });
+        target.from = Math.min(target.from, sp[0]);
+        target.to = Math.max(target.to, sp[1]);
+        var end = Math.max(target.start + target.hours - 1, p.start + hrs - 1);
+        target.start = Math.min(target.start, p.start);
+        target.hours = end - target.start + 1;
+      } else {
+        groups.push({
+          day: p.day, from: sp[0], to: sp[1], start: p.start, hours: hrs,
+          items: [{ subject: s, placement: p, hours: hrs }]
+        });
+      }
+    });
+    return groups;
   }
 
   function placementsOfGrade(grade){
@@ -2039,9 +2061,7 @@
     var table = boardEl.querySelector('.tt-table');
     var rows = table.querySelectorAll('tbody tr');
     // 이 구간에서의 시수만큼 미리보기를 그린다
-    var boards = boardsFor(currentGrade);
-    var board = boards[boardIdx];
-    var lastPeriod = period + (board ? hoursAtWeek(s, Math.max(board.from, s.weekStart)) : maxHours(s)) - 1;
+    var lastPeriod = period + maxHours(s) - 1;
     if(lastPeriod >= rows.length) lastPeriod = rows.length - 1;
 
     var box = scroll.querySelector('.tt-preview');
@@ -2124,24 +2144,20 @@
 
       var head = document.createElement('div');
       head.className = 'board-head';
-      head.innerHTML = '<span>' + (boardIdx + 1) + '구간</span>' +
-        '<span class="board-range">' + startW + '~' + endW + '주 (' + (endW - startW + 1) + '주)</span>';
+      head.innerHTML = '<span>' + currentGrade + '학년 시간표</span>' +
+        '<span class="board-range">1~' + state.totalWeeks + '주</span>';
       wrap.appendChild(head);
 
       // 요일×교시×칸 단위로 무엇이 차 있는지 계산.
       // 블록의 왼쪽 위 칸에만 origin을 두고 나머지는 covered로 표시한다.
       var cell = {};                       // key: 요일|교시|칸
-      placements.forEach(function(p){
-        var s = subjectById(p.subjectId);
-        if(!s) return;
-        var sp = spanOf(s);
-        var hrs = hoursAtWeek(s, startW);     // 이 구간에서의 시수
-        for(var r = 0; r < hrs; r++){
-          for(var c = sp[0]; c <= sp[1]; c++){
-            cell[p.day + '|' + (p.start + r) + '|' + c] = {
-              hours: hrs,
-              origin: (r === 0 && c === sp[0]),
-              subject: s, placement: p, span: sp
+      groupPlacements(placements).forEach(function(g){
+        for(var r = 0; r < g.hours; r++){
+          for(var c = g.from; c <= g.to; c++){
+            cell[g.day + '|' + (g.start + r) + '|' + c] = {
+              hours: g.hours,
+              origin: (r === 0 && c === g.from),
+              group: g, span: [g.from, g.to]
             };
           }
         }
@@ -2247,42 +2263,48 @@
               if(!info) td.colSpan = piece.to - piece.from + 1;
 
               if(info){
-                var s = info.subject, sp = info.span;
+                var g = info.group, sp = info.span;
                 td.rowSpan = info.hours;
                 td.colSpan = sp[1] - sp[0] + 1;
                 td.className += ' occupied';
-                var color = subjectColor(s);
-                var box = document.createElement('div');
-                box.className = 'placed';
-                box.draggable = true;
-                box.style.background = color.bg;
-                box.style.border = '1px solid ' + color.border;
-                box.innerHTML =
-                  '<span class="p-name">' + escapeHtml(s.name) + '</span>' +
-                  '<span class="p-meta">' + escapeHtml(s.classType + '반 ' + s.classLabel) + '</span>' +
-                  '<span class="p-meta">' + escapeHtml(s.professor) + '</span>' +
-                  '<span class="p-meta">' + escapeHtml(info.placement.room || '-') + '</span>' +
-                  '<span class="p-weeks">' + info.hours + '시간' +
-                    (weekCount(s) < state.totalWeeks ? ' · ' + s.weekStart + '~' + s.weekEnd + '주' : '') +
-                  '</span>';
-                (function(sid){
-                  box.addEventListener('dragstart', function(e){
-                    dragSubjectId = sid;
-                    e.dataTransfer.setData('text/plain', sid);
-                    e.dataTransfer.effectAllowed = 'move';
-                  });
-                  var del = document.createElement('button');
-                  del.type = 'button';
-                  del.className = 'p-del';
-                  del.title = '배치 해제';
-                  del.textContent = '×';
-                  del.addEventListener('click', function(ev){
-                    ev.stopPropagation();
-                    unplace(sid);
-                  });
-                  box.appendChild(del);
-                })(s.id);
-                td.appendChild(box);
+                // 같은 자리를 주차만 달리해 쓰는 수업이 있으면 위아래로 나눠 담는다
+                var stack = document.createElement('div');
+                stack.className = 'stack';
+                td.appendChild(stack);
+
+                g.items.forEach(function(item){
+                  var s = item.subject;
+                  var color = subjectColor(s);
+                  var box = document.createElement('div');
+                  box.className = 'placed';
+                  box.draggable = true;
+                  box.style.background = color.bg;
+                  box.style.border = '1px solid ' + color.border;
+                  box.innerHTML =
+                    '<span class="p-name">' + escapeHtml(s.name) + '</span>' +
+                    '<span class="p-meta">' + escapeHtml(s.classType + '반 ' + s.classLabel) + '</span>' +
+                    '<span class="p-meta">' + escapeHtml(s.professor) + '</span>' +
+                    '<span class="p-meta">' + escapeHtml(item.placement.room || '-') + '</span>' +
+                    '<span class="p-weeks">' + escapeHtml(planText(s)) + '</span>';
+                  (function(sid){
+                    box.addEventListener('dragstart', function(e){
+                      dragSubjectId = sid;
+                      e.dataTransfer.setData('text/plain', sid);
+                      e.dataTransfer.effectAllowed = 'move';
+                    });
+                    var del = document.createElement('button');
+                    del.type = 'button';
+                    del.className = 'p-del';
+                    del.title = '배치 해제';
+                    del.textContent = '×';
+                    del.addEventListener('click', function(ev){
+                      ev.stopPropagation();
+                      unplace(sid);
+                    });
+                    box.appendChild(del);
+                  })(s.id);
+                  stack.appendChild(box);
+                });
                 tr.appendChild(td);
                 return;
               }
@@ -2676,17 +2698,11 @@
     merges.push({ s: { r: 0, c: 1 }, e: { r: 2, c: 1 } });
     rows.push(head1, head2, head3);
 
-    var origin = {}, covered = {};
-    placements.forEach(function(p){
-      var s = subjectById(p.subjectId);
-      if(!s) return;
-      var sp = spanOf(s);
-      var hrs = hoursAtWeek(s, Math.max(board.from, s.weekStart));   // 이 구간에서의 시수
-      for(var r = 0; r < hrs; r++){
-        for(var c = sp[0]; c <= sp[1]; c++){
-          var key = p.day + '|' + (p.start + r) + '|' + c;
-          if(r === 0 && c === sp[0]) origin[key] = { subject: s, placement: p, span: sp, hours: hrs };
-          else covered[key] = true;
+    var origin = {};
+    groupPlacements(placements).forEach(function(g){
+      for(var r = 0; r < g.hours; r++){
+        for(var c = g.from; c <= g.to; c++){
+          if(r === 0 && c === g.from) origin[g.day + '|' + g.start + '|' + c] = g;
         }
       }
     });
@@ -2695,16 +2711,17 @@
       var row = [periodLabel(i), periodTime(i)];
       DAYS.forEach(function(day, di){
         for(var c = 0; c < DAY_COL_COUNT; c++){
-          var key = day + '|' + i + '|' + c;
-          var o = origin[key];
-          if(o){
-            var s = o.subject;
-            row.push(s.name + '\n' + s.classType + '반 ' + s.classLabel + '\n' + s.professor +
-              '\n' + (o.placement.room || '-') + '\n' + o.hours + '시간' +
-              (weekCount(s) < state.totalWeeks ? '\n' + s.weekStart + '~' + s.weekEnd + '주' : ''));
+          var g = origin[day + '|' + i + '|' + c];
+          if(g){
+            // 한 칸을 나눠 쓰면 줄을 띄워 함께 적는다
+            row.push(g.items.map(function(item){
+              var s = item.subject;
+              return s.name + '\n' + s.classType + '반 ' + s.classLabel + '\n' + s.professor +
+                '\n' + (item.placement.room || '-') + '\n' + planText(s);
+            }).join('\n──────\n'));
             merges.push({
-              s: { r: 3 + i, c: colOf(di, o.span[0]) },
-              e: { r: 3 + i + o.hours - 1, c: colOf(di, o.span[1]) }
+              s: { r: 3 + i, c: colOf(di, g.from) },
+              e: { r: 3 + i + g.hours - 1, c: colOf(di, g.to) }
             });
           } else {
             row.push('');
@@ -2744,8 +2761,7 @@
             var w = [{ wch: 7 }, { wch: 12 }];
             DAYS.forEach(function(){ COL_UNITS.forEach(function(u){ w.push({ wch: u * 7 }); }); });
             ws['!cols'] = w;
-            var nm = g + '학년 ' + (bi + 1) + '구간(' + board.from + '-' + board.to + '주)';
-            XLSX.utils.book_append_sheet(wb, ws, nm.slice(0, 31));
+            XLSX.utils.book_append_sheet(wb, ws, (g + '학년 시간표').slice(0, 31));
           });
         });
         if(!any){ showToast('시간표에 배치된 과목이 없습니다', true); return; }
