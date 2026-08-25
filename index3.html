@@ -185,6 +185,14 @@
     background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.35);
     border-radius:100px;padding:2px 8px;flex-shrink:0;
   }
+  /* 평가 결과 표의 개인별 제출 초기화 버튼 */
+  .submit-reset-btn{
+    margin-left:8px;font-family:inherit;font-size:11px;font-weight:650;
+    color:#ff9ec4;background:rgba(255,92,157,.1);
+    border:1px solid rgba(255,92,157,.4);border-radius:7px;
+    padding:2px 7px;cursor:pointer;white-space:nowrap;
+  }
+  .submit-reset-btn:hover{background:rgba(255,92,157,.2);color:#ffc2d9}
   /* 반별 팀 개수 요약 (전체 반 보기) */
   .section-count-summary{
     display:flex;flex-wrap:wrap;gap:8px;align-items:center;
@@ -766,7 +774,7 @@
    *
    * 커밋 메시지 끝에도 같은 값을 (v1.1) 형식으로 붙인다.
    * ============================================================ */
-  var APP_VERSION = '1.1';
+  var APP_VERSION = '1.2';
 
   var ROLES = ['기획', '아트', '개발'];
   var INDIVIDUAL_GRADES = ['2', '3'];
@@ -1677,21 +1685,36 @@
   }
 
   /* "1팀/2팀"은 팀의 순번이라 고정이고, 그 옆에 붙는 팀명(title)만 바꿀 수 있다. */
-  function slotLabel(teamId){
-    return String(teamId).replace('t', '') + '팀';
+  /* 내부 번호 그대로의 이름. 팀 id(t11)와 서버에 저장된 name("11팀")의 기준이며,
+   * 예전 데이터에서 팀명을 물려받을지 판단할 때도 이 값과 비교한다. */
+  function absoluteSlotLabel(teamId){
+    return teamNumberOf(teamId) + '팀';
+  }
+
+  /* 화면에 보이는 팀 번호.
+   * 반을 쓰는 학년(1학년)은 반마다 1팀부터 다시 센다 — b반 t11 은 "1팀".
+   * 내부 id 와 저장된 name 은 t11 / "11팀" 그대로 두므로 데이터는 바뀌지 않는다. */
+  function slotLabel(teamId, grade){
+    var n = teamNumberOf(teamId);
+    if(gradeUsesSections(grade)) return ((n - 1) % TEAMS_PER_SECTION + 1) + '팀';
+    return n + '팀';
   }
 
   // 예전에는 팀명을 name에 직접 적었으므로, title이 없고 name이 순번과
   // 다르면 그 값을 팀명으로 물려받는다
   function teamTitle(team){
     if(team.title !== undefined) return team.title;
-    if(team.name && team.name !== slotLabel(team.id)) return team.name;
+    if(team.name && team.name !== absoluteSlotLabel(team.id)) return team.name;
     return '';
   }
 
-  function teamFullName(team){
+  /* 반마다 1팀부터 다시 세므로 "1팀"이 여러 개 생긴다. 학년 전체를 놓고
+   * 가리킬 때는 반을 앞에 붙여 구분한다 — "b반 1팀". */
+  function teamFullName(team, grade){
+    var base = slotLabel(team.id, grade);
+    if(gradeUsesSections(grade)) base = teamSection(team) + '반 ' + base;
     var t = teamTitle(team);
-    return t ? slotLabel(team.id) + ' (' + t + ')' : slotLabel(team.id);
+    return t ? base + ' (' + t + ')' : base;
   }
 
   function setTeamTitleLocal(grade, teamId, title){
@@ -1700,7 +1723,7 @@
     var team = (gd.teams || []).filter(function(t){ return t.id === teamId; })[0];
     if(team){
       team.title = title;
-      team.name = slotLabel(teamId);
+      team.name = absoluteSlotLabel(teamId);
     }
   }
 
@@ -1716,8 +1739,8 @@
       saveState();
       markStateSynced();
       showToast(title
-        ? slotLabel(teamId) + ' 팀명을 "' + title + '"으로 저장했습니다'
-        : slotLabel(teamId) + ' 팀명을 지웠습니다');
+        ? slotLabel(teamId, grade) + ' 팀명을 "' + title + '"으로 저장했습니다'
+        : slotLabel(teamId, grade) + ' 팀명을 지웠습니다');
     });
   }
 
@@ -1969,7 +1992,7 @@
         (team.roles[role] || []).forEach(function(sid){
           var s = studentById(sid);
           if(!s) return;
-          rows.push([slotLabel(team.id), sec, title, role, s.studentId, s.name, s.grade + '학년', s.section]);
+          rows.push([slotLabel(team.id, grade), sec, title, role, s.studentId, s.name, s.grade + '학년', s.section]);
         });
       });
     });
@@ -2169,7 +2192,7 @@
       // 팀 순번은 고정 (수정 불가)
       var slotEl = document.createElement('span');
       slotEl.className = 'team-slot-label';
-      slotEl.textContent = slotLabel(team.id);
+      slotEl.textContent = slotLabel(team.id, grade);
       head.appendChild(slotEl);
 
       /* 반은 팀 번호 구간으로 정해지므로 표시만 한다.
@@ -2509,7 +2532,8 @@
 
     var head = document.createElement('div');
     head.className = 'eval-rating-head';
-    head.innerHTML = '<h3>' + escapeHtml(student.grade) + '학년 ' + escapeHtml(teamFullName(team)) + ' · ' + escapeHtml(student.name) + '님</h3>' +
+    // 다른 학년 팀에 배정된 학생도 있으므로 팀이 속한 학년(info.grade)을 쓴다
+    head.innerHTML = '<h3>' + escapeHtml(info.grade) + '학년 ' + escapeHtml(teamFullName(team, info.grade)) + ' · ' + escapeHtml(student.name) + '님</h3>' +
       '<p>팀원의 기여도를 1점(낮음)~5점(높음)으로 평가해 주세요.</p>';
     card.appendChild(head);
 
@@ -2775,10 +2799,27 @@
       var tdSid = document.createElement('td');
       tdSid.textContent = s.studentId;
       /* 제출 여부는 점수가 아니라 학번 목록이므로 공개 상태로 내려온다.
-       * 비번을 만들었지만 아직 안 낸 학생을 구분해서 독촉할 수 있게 한다. */
+       * 비번을 만들었지만 아직 안 낸 학생을 구분해서 독촉할 수 있게 한다.
+       * 제출한 학생 옆에는 그 학생만 다시 평가하게 해주는 버튼을 붙인다. */
       var tdDone = document.createElement('td');
-      tdDone.textContent = hasSubmitted(s.studentId) ? '✓'
-        : hasPassword(s.studentId) ? '비번만' : '—';
+      var submitted = hasSubmitted(s.studentId);
+      var doneMark = document.createElement('span');
+      doneMark.textContent = submitted ? '✓' : (hasPassword(s.studentId) ? '비번만' : '—');
+      tdDone.appendChild(doneMark);
+      if(submitted){
+        var resetBtn = document.createElement('button');
+        resetBtn.type = 'button';
+        resetBtn.className = 'submit-reset-btn';
+        resetBtn.textContent = '제출 초기화';
+        resetBtn.title = '이 학생의 제출만 지웁니다. 비밀번호는 그대로 두므로 같은 비밀번호로 다시 평가할 수 있습니다.';
+        (function(student){
+          resetBtn.addEventListener('click', function(ev){
+            ev.stopPropagation();
+            clearOneSubmission(student);
+          });
+        })(s);
+        tdDone.appendChild(resetBtn);
+      }
       var tdAvg = document.createElement('td');
       tdAvg.textContent = avg;
 
@@ -2862,6 +2903,38 @@
       });
     });
   });
+
+  /* 학생 한 명의 제출만 지운다. 결과 탭을 열 때 확인한 교수 비밀번호를
+   * 그대로 재사용하므로 매번 다시 묻지 않는다. */
+  function clearOneSubmission(student){
+    if(!resultsPassword){
+      showToast('먼저 비밀번호로 잠금을 해제해 주세요');
+      return;
+    }
+    if(!window.confirm(student.name + '(' + student.studentId + ')의 제출을 지웁니다.\n' +
+        '이 학생이 낸 점수만 사라지고, 비밀번호는 그대로 남아 같은 비밀번호로 다시 평가할 수 있습니다.\n' +
+        '되돌릴 수 없습니다. 계속할까요?')) return;
+
+    callServer('clearStudentEvaluation', { studentId: student.studentId }, resultsPassword, function(res){
+      if(!res || !res.ok){
+        var why = !res ? '서버에 연결할 수 없습니다'
+          : res.error === 'wrong password' ? '비밀번호가 더 이상 유효하지 않습니다. 다시 잠금을 해제해 주세요'
+          : res.error === 'nothing submitted' ? '이미 제출 기록이 없습니다'
+          : (res.error || '알 수 없는 오류');
+        showToast('초기화에 실패했습니다: ' + why);
+        return;
+      }
+      state = normalizeState(res.state);
+      saveState();
+      markStateSynced();
+      // 지운 뒤의 점수를 다시 받아와야 평균이 맞는다
+      fetchResults(resultsPassword, function(evaluations){
+        resultsEvaluations = evaluations === null ? {} : evaluations;
+        renderResultsList(currentResultsGrade);
+        showToast(student.name + '님의 제출을 초기화했습니다');
+      });
+    });
+  }
 
   function openResultDetail(student, ratings, avg){
     document.getElementById('resultDetailTitle').textContent = student.name + ' (' + student.studentId + ') 평가 내역';

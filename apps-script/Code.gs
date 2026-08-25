@@ -556,6 +556,17 @@ function applyAction(store, action, payload, password) {
       return { ok: true, message: 'evaluations cleared: ' + ceCleared };
     }
 
+    /* 학생 한 명의 제출만 지운다 — 다시 평가하게 해줄 때 쓴다.
+     * 비밀번호는 남겨두므로 학생은 같은 비밀번호로 들어와 다시 낼 수 있다. */
+    case 'clearStudentEvaluation': {
+      if (password !== store.password) return { ok: false, error: 'wrong password' };
+      var csId = String(payload.studentId || '');
+      if (!csId) return { ok: false, error: 'bad payload' };
+      if (state.evaluations[csId] === undefined) return { ok: false, error: 'nothing submitted' };
+      delete state.evaluations[csId];
+      return { ok: true, message: 'student evaluation cleared' };
+    }
+
     // 학생이 비밀번호를 잊었을 때 — 교수가 지워 주면 다시 만들 수 있다
     case 'resetStudentPassword': {
       if (password !== store.password) return { ok: false, error: 'wrong password' };

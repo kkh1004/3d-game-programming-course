@@ -22,7 +22,7 @@
 |---|---|---|---|---|---|
 | `index.html` | **공지 메일 작성기** | 공지 유형·대상 고르면 메일 초안 생성 → Gmail로 바로 발송 | 1,138줄 | Google OAuth + Gmail API | [docs/01-공지메일작성기.md](docs/01-공지메일작성기.md) |
 | `index2.html` | **과목 소개페이지** | 3D게임프로그래밍 홍보용 정적 랜딩 페이지 | 557줄 | 없음 | [docs/02-과목소개페이지.md](docs/02-과목소개페이지.md) |
-| `index3.html` | **프로젝트팀 관리 시스템** (v1.1) | 명단 업로드 → 팀 배정 → 팀원 상호평가 → 결과 집계 | 2,859줄 | Apps Script `Code.gs` | [docs/03-프로젝트팀관리.md](docs/03-프로젝트팀관리.md) |
+| `index3.html` | **프로젝트팀 관리 시스템** (v1.2) | 명단 업로드 → 팀 배정 → 팀원 상호평가 → 결과 집계 | 2,859줄 | Apps Script `Code.gs` | [docs/03-프로젝트팀관리.md](docs/03-프로젝트팀관리.md) |
 | `index4.html` | **시간표 생성기** (v1.13) | 과목·강의실 등록 → 드래그로 시간표 배치 → 교수별 시수 집계 | 3,193줄 | Apps Script `Timetable.gs` | [docs/04-시간표생성기.md](docs/04-시간표생성기.md) |
 
 ## 부속 파일
@@ -57,7 +57,7 @@
 
 | 앱 | 현재 | 표시 위치 |
 |---|---|---|
-| `index3.html` 프로젝트팀 관리 | **v1.1** | 상단 배지(`verBadge`) + 푸터(`verFooter`) |
+| `index3.html` 프로젝트팀 관리 | **v1.2** | 상단 배지(`verBadge`) + 푸터(`verFooter`) |
 | `index4.html` 시간표 생성기 | **v1.13** | 상단 배지(`verBadge`) + 푸터(`verFooter`) |
 
 `index.html` 과 `index2.html` 은 버전을 쓰지 않는다.
