@@ -774,7 +774,7 @@
    *
    * 커밋 메시지 끝에도 같은 값을 (v1.1) 형식으로 붙인다.
    * ============================================================ */
-  var APP_VERSION = '1.2';
+  var APP_VERSION = '1.3';
 
   var ROLES = ['기획', '아트', '개발'];
   var INDIVIDUAL_GRADES = ['2', '3'];
@@ -2459,8 +2459,15 @@
           saveState();
           markStateSynced();
           evalPassword = pw;
-          showToast('비밀번호를 만들었습니다');
-          renderEvalRating(student, {});
+          /* 비밀번호 제도가 생기기 전에 이미 제출한 학생이 있다. 그 학생은
+           * 이제 비밀번호를 새로 만드는데, 빈 화면을 주면 자기가 준 점수를
+           * 못 보고 처음부터 다시 매겨야 한다. 그래서 만든 직후에 본인
+           * 제출분을 받아와서 채워 준다. */
+          callServer('getMyEvaluation', { studentId: student.studentId, password: pw }, null, function(res2){
+            var mine = (res2 && res2.ok && res2.data && res2.data.scores) || {};
+            showToast('비밀번호를 만들었습니다');
+            renderEvalRating(student, mine);
+          });
         });
       return;
     }
