@@ -636,9 +636,9 @@
 
         <div class="tt-toolbar">
           <div class="weeks-field">
-            <span>총 운영 주차</span>
+            <span id="weeksLabel">총 운영 주차</span>
             <input type="number" id="totalWeeksInput" min="1" max="15" value="15">
-            <span>주 <span class="lock-note">학기 15주 중 · 남는 주차는 별도 시간표로 생성</span></span>
+            <span>주 <span class="lock-note">학년별로 따로 지정 · 남는 주차는 별도 시간표로 생성</span></span>
             <button type="button" class="apply-btn" id="applyWeeksBtn">적용</button>
           </div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -755,7 +755,7 @@
 (function(){
   /* 버전 — 올릴 때마다 뒷자리를 1씩 증가시킨다.
    * 앞자리는 지정이 있을 때만 올린다. */
-  var APP_VERSION = '1.12';
+  var APP_VERSION = '1.13';
 
   /* 한 학기는 15주로 고정한다. 학점당 강의시간(시수 × 15주)의 기준이라
    * 시간표를 몇 주로 운영하든 이 값은 바뀌지 않는다. */
@@ -851,7 +851,7 @@
     return {
       subjects: [],
       rooms: DEFAULT_ROOMS.slice(),
-      totalWeeks: 15,
+      totalWeeksByGrade: { '1': TERM_WEEKS, '2': TERM_WEEKS, '3': TERM_WEEKS },
       placements: []
     };
   }
@@ -861,11 +861,26 @@
     if(!s || typeof s !== 'object') return emptyState();
     if(!s.subjects) s.subjects = [];
     if(!s.rooms || !s.rooms.length) s.rooms = DEFAULT_ROOMS.slice();
-    if(!s.totalWeeks) s.totalWeeks = 15;
     if(!s.placements) s.placements = [];
+    migrateTotalWeeks(s);
     migrateBoards(s);
     migrateWeekRange(s);
     return s;
+  }
+
+  function migrateTotalWeeks(s){
+    if(!s.totalWeeksByGrade || typeof s.totalWeeksByGrade !== 'object'){
+      var one = parseInt(s.totalWeeks, 10);
+      if(isNaN(one) || one < 1 || one > TERM_WEEKS) one = TERM_WEEKS;
+      s.totalWeeksByGrade = {};
+      GRADES.forEach(function(g){ s.totalWeeksByGrade[g] = one; });
+      didMigrate = true;
+    }
+    GRADES.forEach(function(g){
+      var v = parseInt(s.totalWeeksByGrade[g], 10);
+      s.totalWeeksByGrade[g] = (!isNaN(v) && v >= 1 && v <= TERM_WEEKS) ? v : TERM_WEEKS;
+    });
+    delete s.totalWeeks;
   }
 
   /* 예전 형식: 배치가 학년별 구간(boardsByGrade) 안에 들어 있었다.
@@ -1246,7 +1261,7 @@
     /* 총 운영 주차는 "주 시간표를 몇 주까지 쓰는지"다.
      * 학기(15주)보다 짧게 잡으면 남는 주차만 담는 시간표를 하나 더 만든다.
      * (예: 12주로 잡으면 1~12주 시간표 + 13~15주 시간표) */
-    var main = Math.min(state.totalWeeks, TERM_WEEKS);
+    var main = totalWeeksOf(grade);
     var boards = [{ from: 1, to: main }];
     if(main < TERM_WEEKS) boards.push({ from: main + 1, to: TERM_WEEKS });
     return boards;
@@ -1299,12 +1314,19 @@
   // 이 구간(주차 범위)에 걸쳐 있는 배치들
   /* 잔여 주차에만 진행하는 과목인지 — 시작 주차가 주 운영 기간 뒤라면 그렇다.
    * 주 운영 시간표의 수업은 잔여 주차에서는 이미 끝난 것으로 본다. */
+  // 총 운영 주차는 학년마다 따로 정한다
+  function totalWeeksOf(grade){
+    var v = state.totalWeeksByGrade && state.totalWeeksByGrade[String(grade)];
+    v = parseInt(v, 10);
+    return (!isNaN(v) && v >= 1 && v <= TERM_WEEKS) ? v : TERM_WEEKS;
+  }
+
   function isLeftoverSubject(s){
-    return s.weekStart > state.totalWeeks;
+    return s.weekStart > totalWeeksOf(s.grade);
   }
 
   function placementsOnBoard(grade, board){
-    var leftoverBoard = board.from > state.totalWeeks;
+    var leftoverBoard = board.from > totalWeeksOf(grade);
     return placementsOfGrade(grade).filter(function(p){
       var s = subjectById(p.subjectId);
       if(!s) return false;
@@ -2285,15 +2307,15 @@
     var v = parseInt(input.value, 10);
     if(isNaN(v) || v < 1 || v > TERM_WEEKS){
       showToast('총 운영 주차는 1~' + TERM_WEEKS + ' 사이로 입력해 주세요');
-      input.value = state.totalWeeks;
+      input.value = totalWeeksOf(currentGrade);
       return;
     }
-    state.totalWeeks = v;
+    state.totalWeeksByGrade[currentGrade] = v;
     saveState();
     renderTimetableTab();
-    showToast(v < TERM_WEEKS
+    showToast(currentGrade + '학년 · ' + (v < TERM_WEEKS
       ? '1~' + v + '주 시간표와 ' + (v + 1) + '~' + TERM_WEEKS + '주 시간표로 나눴습니다'
-      : '시간표를 1~' + TERM_WEEKS + '주 한 장으로 운영합니다');
+      : '시간표를 1~' + TERM_WEEKS + '주 한 장으로 운영합니다'));
   }
 
   /* ============================================================
@@ -2309,7 +2331,8 @@
     }
     empty.style.display = 'none';
     content.style.display = 'block';
-    document.getElementById('totalWeeksInput').value = state.totalWeeks;
+    document.getElementById('totalWeeksInput').value = totalWeeksOf(currentGrade);
+    document.getElementById('weeksLabel').textContent = currentGrade + '학년 총 운영 주차';
     renderRooms();
     renderPool();
     renderBoards();
