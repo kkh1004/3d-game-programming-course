@@ -174,6 +174,19 @@
     display:flex;align-items:center;gap:10px;flex-wrap:wrap;
   }
   .team-slot-label{font-weight:700;font-size:14px;flex-shrink:0}
+  /* 팀의 반(a/b/c) — 1학년 팀 카드에만 나온다 */
+  .team-section-select{
+    font-family:inherit;font-size:12px;font-weight:700;color:var(--a2);
+    background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.35);
+    border-radius:7px;padding:3px 6px;cursor:pointer;flex-shrink:0;
+  }
+  .team-section-select:hover{background:rgba(34,211,238,.18)}
+  .team-section-select:focus{outline:none;border-color:rgba(34,211,238,.75)}
+  /* 다른 학년에서 데려온 학생 — 원 소속이 다르다는 것을 눈에 띄게 한다 */
+  .student-chip.is-other-grade{
+    border-color:rgba(255,92,157,.45);background:rgba(255,92,157,.08);
+  }
+  .student-chip.is-other-grade .sid{color:#ff9ec4}
   .team-name-input{
     font-family:inherit;font-size:13.5px;font-weight:650;color:var(--text);
     background:rgba(255,255,255,.06);border:1px solid var(--stroke);
@@ -461,6 +474,14 @@
           <button type="button" class="grade-chip" data-grade="3">3학년</button>
         </div>
 
+        <!-- 반(수업반) 필터 — 반별로 팀이 편성되는 1학년에서만 보인다 -->
+        <div class="grade-filter" id="teamSectionFilter" style="display:none">
+          <button type="button" class="grade-chip active" data-section="all">전체 반</button>
+          <button type="button" class="grade-chip" data-section="a">a반</button>
+          <button type="button" class="grade-chip" data-section="b">b반</button>
+          <button type="button" class="grade-chip" data-section="c">c반</button>
+        </div>
+
         <div class="team-toolbar">
           <div class="team-count-field">
             <span>팀 개수</span>
@@ -476,6 +497,11 @@
         <div class="team-body">
           <div class="unassigned-panel">
             <h3>미배정 학생 (<span id="unassignedCount">0</span>)</h3>
+            <!-- 다른 학년 학생을 이 학년 팀에 넣을 때 사용한다.
+                 명단상 학년은 바뀌지 않고, 팀 배정만 이 학년으로 옮겨진다. -->
+            <label class="eval-hint" style="display:block;margin:0 0 8px">
+              <input type="checkbox" id="showOtherGradesChk"> 다른 학년 학생도 보기
+            </label>
             <div class="unassigned-list" id="unassignedList"></div>
           </div>
 
@@ -497,11 +523,29 @@
         <div id="evalLookupView">
           <div class="eval-card">
             <h3>학번과 이름을 입력하세요</h3>
-            <p class="eval-hint">본인이 속한 팀의 팀원 목록이 표시됩니다.</p>
+            <p class="eval-hint">본인 확인 후, 본인이 속한 팀의 팀원 목록이 표시됩니다.</p>
             <div class="eval-input-row">
               <input type="text" id="evalStudentId" class="input-field" placeholder="학번">
               <input type="text" id="evalStudentName" class="input-field" placeholder="이름">
               <button type="button" class="apply-btn" id="evalLookupBtn">조회</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 본인 확인 — 학번·이름만으로는 남이 내 평가를 열어볼 수 있으므로
+             학생이 직접 만든 비밀번호로 한 번 더 확인한다. -->
+        <div id="evalPwView" style="display:none">
+          <div class="eval-card">
+            <h3 id="evalPwTitle"></h3>
+            <p class="eval-hint" id="evalPwHint"></p>
+            <div class="eval-input-row">
+              <input type="password" id="evalPwInput" class="input-field" placeholder="비밀번호 (4자 이상)">
+              <input type="password" id="evalPwInput2" class="input-field" placeholder="비밀번호 확인" style="display:none">
+              <button type="button" class="apply-btn" id="evalPwOkBtn">확인</button>
+            </div>
+            <p class="eval-hint" id="evalPwWarn" style="display:none">⚠️ 이 비밀번호는 되돌려 받을 수 없습니다. 잊으면 담당 교수에게 초기화를 요청해야 합니다.</p>
+            <div class="modal-actions">
+              <button type="button" class="ghost-btn" id="evalPwBackBtn">다시 조회</button>
             </div>
           </div>
         </div>
@@ -529,6 +573,14 @@
           <button type="button" class="grade-chip" data-grade="3">3학년</button>
         </div>
 
+        <div class="team-toolbar">
+          <span class="eval-hint" id="resultsSubmitStatus"></span>
+          <div class="team-toolbar-actions">
+            <button type="button" class="ghost-btn" id="resultsRefreshBtn">새로고침</button>
+            <button type="button" class="ghost-btn" id="resultsClearBtn">평가 결과 초기화</button>
+          </div>
+        </div>
+
         <!-- 검색어가 있으면 학년 구분 없이 전체에서 찾는다 -->
         <div class="results-search-row">
           <input type="text" id="resultsSearchInput" class="input-field" placeholder="학번 또는 이름으로 검색">
@@ -539,12 +591,13 @@
         <div class="roster-table-wrap">
           <div class="roster-scroll">
             <table class="roster-table">
-              <thead><tr><th>학년</th><th>이름</th><th>학번</th><th>평균 점수</th></tr></thead>
+              <thead><tr><th>학년</th><th>이름</th><th>학번</th><th>제출</th><th>평균 점수</th></tr></thead>
               <tbody id="resultsTbody"></tbody>
             </table>
           </div>
         </div>
       </div>
+
     </div>
 
   </section>
@@ -569,6 +622,33 @@
 <div class="toast" id="toast"></div>
 
 <div class="loading-badge" id="loadingBadge"><span class="loading-spinner"></span>데이터 갱신 중…</div>
+
+<!-- 평가 결과 초기화 — 학생이 제출한 기여도 평가만 지운다 (팀 배정은 그대로) -->
+<div class="modal-overlay" id="clearEvalOverlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>평가 결과 초기화</h3>
+      <button type="button" class="modal-close" id="clearEvalClose">×</button>
+    </div>
+    <p class="eval-hint">학생들이 제출한 기여도 평가를 지웁니다. 팀 배정과 명단은 그대로 남습니다. <b>되돌릴 수 없습니다.</b></p>
+    <div class="field-row">
+      <label class="eval-hint"><input type="radio" name="clearEvalScope" value="grade" checked> 현재 보고 있는 학년만</label>
+    </div>
+    <div class="field-row">
+      <label class="eval-hint"><input type="radio" name="clearEvalScope" value="all"> 전체 학년</label>
+    </div>
+    <div class="field-row">
+      <label class="eval-hint"><input type="checkbox" id="clearEvalWithPw"> 학생 비밀번호도 함께 초기화</label>
+    </div>
+    <p class="eval-hint">비밀번호를 남겨두면 학생이 같은 비밀번호로 다시 평가할 수 있고, 함께 지우면 새로 만들어야 합니다.</p>
+    <div class="field-row">
+      <input type="password" id="clearEvalPwInput" class="input-field" placeholder="비밀번호">
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="apply-btn" id="clearEvalConfirmBtn">평가 결과 초기화 실행</button>
+    </div>
+  </div>
+</div>
 
 <div class="modal-overlay" id="resetModalOverlay" style="display:none">
   <div class="modal-box">
@@ -613,7 +693,7 @@
     <div class="change-pw-section">
       <button type="button" class="ghost-btn" id="exportStateBtn">고급 · 현재 상태 내보내기</button>
       <div id="exportSection" style="display:none;margin-top:14px">
-        <p class="eval-hint">서버 없이 쓰던 시절의 백업 기능입니다. 아래 코드를 <code>index3.html</code>의 <code>SEED_STATE</code>에 붙여넣으면 서버가 없어도 이 상태가 기본값으로 보입니다.</p>
+        <p class="eval-hint">서버 없이 쓰던 시절의 백업 기능입니다. 아래 코드를 <code>index3.html</code>의 <code>SEED_STATE</code>에 붙여넣으면 서버가 없어도 명단과 팀 구성이 기본값으로 보입니다. 기여도 평가 점수는 공개 파일에 노출되지 않도록 담지 않습니다.</p>
         <textarea id="exportOutput" class="input-field" style="width:100%;min-height:160px;font-family:monospace;font-size:11.5px;resize:vertical" readonly></textarea>
         <div class="modal-actions">
           <button type="button" class="apply-btn" id="exportCopyBtn">복사</button>
@@ -668,6 +748,33 @@
 (function(){
   var ROLES = ['기획', '아트', '개발'];
   var INDIVIDUAL_GRADES = ['2', '3'];
+
+  /* 반(수업반) 구분은 1학년만 쓴다. 2·3학년은 반 없이 팀 번호만 쓴다.
+   * 서버(Code.gs)의 SECTION_GRADES / SECTIONS / TEAMS_PER_SECTION 과
+   * 같은 값을 유지해야 한다. */
+  var SECTION_GRADES = ['1'];
+  var SECTIONS = ['a', 'b', 'c'];
+  var TEAMS_PER_SECTION = 10;   // 1~10팀 = a반, 11~20팀 = b반, 21~30팀 = c반
+
+  function gradeUsesSections(grade){
+    return SECTION_GRADES.indexOf(String(grade)) !== -1;
+  }
+  function teamNumberOf(teamId){
+    var n = parseInt(String(teamId).replace('t', ''), 10);
+    return isNaN(n) ? 0 : n;
+  }
+  function sectionForTeamNumber(n){
+    var idx = Math.floor((n - 1) / TEAMS_PER_SECTION);
+    if(idx < 0) idx = 0;
+    if(idx >= SECTIONS.length) idx = SECTIONS.length - 1;
+    return SECTIONS[idx];
+  }
+  /* 서버가 이관해 주지만, 서버에 닿지 못하는 동안에도 화면이 비지 않도록
+   * 값이 없으면 팀 번호로 반을 계산해서 쓴다. */
+  function teamSection(team){
+    if(SECTIONS.indexOf(team.section) !== -1) return team.section;
+    return sectionForTeamNumber(teamNumberOf(team.id));
+  }
   var STORAGE_KEY = 'teamProjectGenState_v1';
   var PASSWORD_KEY = 'teamProjectGenPassword_v1';
   var DEFAULT_PASSWORD = '1004';
@@ -685,11 +792,11 @@
 
   /* ============================================================
    * SEED_STATE — "현재 상태 내보내기"로 생성한 코드를 여기에 붙여넣으면
-   * localStorage가 비어있는(=처음 접속하는) 방문자에게도 같은 명단·팀·
-   * 평가 결과가 기본값으로 보입니다. 점수는 이름표가 붙은 형태가 아니라
-   * 팀 구성 순서를 기준으로 한 숫자 배열(evalCode)로만 저장되어,
-   * 코드를 훑어봐도 "누가 몇 점"인지 바로 알아보기 어렵습니다.
-   * (완전한 암호화는 아니며, 코드를 분석하면 규칙을 알아낼 수 있습니다)
+   * localStorage가 비어있는(=처음 접속하는) 방문자에게도 같은 명단·팀
+   * 구성이 기본값으로 보입니다.
+   *
+   * ⚠️ 평가 점수는 여기에 담지 않습니다. 이 파일은 GitHub Pages로 공개되어
+   *    있어서, 점수를 넣으면 누구나 볼 수 있게 됩니다.
    * ============================================================ */
   var SEED_STATE = null;
 
@@ -762,13 +869,17 @@
   // 모달이 열려 있거나 평가 입력 중이면 화면을 새로 그리지 않는다
   // (작성 중인 내용이 날아가는 것을 막기 위함)
   function uiBusy(){
-    var ids = ['resetModalOverlay', 'uploadModeModalOverlay', 'resultDetailModalOverlay', 'pwPromptOverlay', 'pwSettingsOverlay'];
+    var ids = ['resetModalOverlay', 'uploadModeModalOverlay', 'resultDetailModalOverlay',
+               'pwPromptOverlay', 'pwSettingsOverlay', 'clearEvalOverlay'];
     for(var i = 0; i < ids.length; i++){
       var el = document.getElementById(ids[i]);
       if(el && el.style.display !== 'none') return true;
     }
     var ratingView = document.getElementById('evalRatingView');
     if(ratingView && ratingView.style.display !== 'none') return true;
+    // 학생이 비밀번호를 입력하는 중에도 화면을 갈아치우면 안 된다
+    var pwView = document.getElementById('evalPwView');
+    if(pwView && pwView.style.display !== 'none') return true;
     // 팀 이름을 입력하는 중이면 다시 그리지 않는다 (입력 내용이 날아가는 것 방지)
     var active = document.activeElement;
     if(active && active.classList && active.classList.contains('team-name-input')) return true;
@@ -776,8 +887,7 @@
   }
 
   function applyServerState(newState){
-    state = newState;
-    if(!state.evaluations) state.evaluations = {};
+    state = normalizeState(newState);
     saveState();
     lastStateJson = JSON.stringify(state);
     renderUploadSummary();
@@ -843,6 +953,7 @@
    * 확인되면 onOk(비밀번호)를 호출한다.
    * ============================================================ */
   var pwPromptOnOk = null;
+  var pwPromptOnCancel = null;
 
   /* 비밀번호 확인은 서버가 최종 기준이다. 다른 PC에서 비밀번호를 바꿨을 수
    * 있으므로 localStorage 값만 믿고 막지 않는다. 서버에 닿지 못할 때만
@@ -856,8 +967,11 @@
     });
   }
 
-  function requirePassword(title, desc, onOk){
+  /* onCancel 은 선택 사항 — 취소했을 때 화면을 원래대로 돌려놔야 하는
+   * 경우(예: 드롭다운 선택)에 쓴다. */
+  function requirePassword(title, desc, onOk, onCancel){
     pwPromptOnOk = onOk;
+    pwPromptOnCancel = onCancel || null;
     document.getElementById('pwPromptTitle').textContent = title;
     document.getElementById('pwPromptDesc').textContent = desc;
     document.getElementById('pwPromptInput').value = '';
@@ -866,9 +980,12 @@
   }
 
   function closePwPrompt(){
+    var onCancel = pwPromptOnCancel;
     document.getElementById('pwPromptOverlay').style.display = 'none';
     document.getElementById('pwPromptInput').value = '';
     pwPromptOnOk = null;
+    pwPromptOnCancel = null;
+    if(onCancel) onCancel();
   }
 
   function submitPwPrompt(){
@@ -883,6 +1000,7 @@
         showToast('비밀번호가 일치하지 않습니다');
         return;
       }
+      pwPromptOnCancel = null;   // 성공했으므로 취소 콜백은 부르지 않는다
       closePwPrompt();
       if(onOk) onOk(pw);
     });
@@ -898,47 +1016,12 @@
     if(e.target === this) closePwPrompt();
   });
 
-  function canonicalRatingPairs(teamsByGrade){
-    var pairs = [];
-    ['1', '2', '3'].forEach(function(grade){
-      var gd = teamsByGrade[grade];
-      if(!gd) return;
-      (gd.teams || []).forEach(function(team){
-        var members = [];
-        ROLES.forEach(function(role){
-          (team.roles[role] || []).forEach(function(sid){ members.push(sid); });
-        });
-        members.forEach(function(evaluator){
-          members.forEach(function(evaluatee){
-            if(evaluator === evaluatee) return;
-            pairs.push([evaluator, evaluatee]);
-          });
-        });
-      });
-    });
-    return pairs;
-  }
-
-  function encodeEvaluations(){
-    var pairs = canonicalRatingPairs(state.teamsByGrade);
-    return pairs.map(function(p){
-      var scores = state.evaluations[p[0]];
-      return (scores && scores[p[1]] !== undefined) ? scores[p[1]] : 0;
-    });
-  }
-
-  function decodeEvaluations(arr, teamsByGrade){
-    var pairs = canonicalRatingPairs(teamsByGrade);
-    var out = {};
-    (arr || []).forEach(function(v, i){
-      if(!v) return;
-      var p = pairs[i];
-      if(!p) return;
-      if(!out[p[0]]) out[p[0]] = {};
-      out[p[0]][p[1]] = v;
-    });
-    return out;
-  }
+  /* 예전에는 평가 점수를 팀 구성 순서 기준의 숫자 배열(evalCode)로 바꿔서
+   * SEED_STATE 에 담아 내보낼 수 있었다. 그 코드를 index3.html 에 붙여넣으면
+   * 공개된 파일 안에 전교생 점수가 들어가는 셈이라, 점수는 내보내기에서
+   * 빼고 관련 함수(canonicalRatingPairs / encodeEvaluations /
+   * decodeEvaluations)도 함께 지웠다.
+   * 점수는 "평가 결과" 탭에서 교수 비밀번호로 확인한다. */
 
   function rebuildAssignedMap(teamsByGrade){
     var map = {};
@@ -958,13 +1041,40 @@
     return map;
   }
 
-  var state = loadState();
-  if(!state.evaluations) state.evaluations = {};
+  /* 서버가 내려주는 공개 상태에는 평가 점수가 들어있지 않다.
+   * 예전 localStorage 캐시에는 evaluations 가 남아 있을 수 있으므로 지운다. */
+  function normalizeState(s){
+    if(!s || typeof s !== 'object') s = {};
+    if(!s.roster) s.roster = [];
+    if(!s.teamsByGrade) s.teamsByGrade = {};
+    if(!s.assignedMap) s.assignedMap = {};
+    if(typeof s.evalEnabled !== 'boolean') s.evalEnabled = false;
+    if(!s.submittedIds) s.submittedIds = [];   // 평가를 제출한 학번 (점수는 없음)
+    if(!s.authedIds) s.authedIds = [];         // 비밀번호를 만든 학번
+    delete s.evaluations;
+    return s;
+  }
+
+  var state = normalizeState(loadState());
   saveState();
   var currentRosterFilter = 'all';
   var currentTeamGrade = '1';
+  var currentTeamSection = 'all';   // 1학년 반(a/b/c) 필터
+  var showOtherGrades = false;      // 미배정 풀에 다른 학년 학생도 보일지
   var currentResultsGrade = '1';
   var resultsUnlocked = false;
+
+  /* 교수 비밀번호로 받아온 전체 평가 결과. 결과 탭을 열 때만 채워지고,
+   * 그 전에는 이 브라우저에 아예 존재하지 않는다. */
+  var resultsEvaluations = null;
+  var resultsPassword = null;   // 결과 새로고침에 다시 쓰려고 잠금 해제 때 기억
+
+  function hasSubmitted(studentId){
+    return state.submittedIds.indexOf(studentId) !== -1;
+  }
+  function hasPassword(studentId){
+    return state.authedIds.indexOf(studentId) !== -1;
+  }
 
   var toast = document.getElementById('toast');
   function showToast(msg){
@@ -978,16 +1088,18 @@
       var raw = localStorage.getItem(STORAGE_KEY);
       if(raw) return JSON.parse(raw);
     } catch(e){}
+    /* SEED_STATE 는 서버 없이 쓰던 시절의 오프라인 기본값이다.
+     * 평가 점수는 이제 서버에서 비밀번호를 내고 받아오므로 여기서는
+     * 명단과 팀 구성만 복원한다. */
     if(SEED_STATE && SEED_STATE.roster && SEED_STATE.roster.length){
       var teamsByGrade = SEED_STATE.teamsByGrade || {};
       return {
         roster: SEED_STATE.roster,
         teamsByGrade: teamsByGrade,
-        assignedMap: rebuildAssignedMap(teamsByGrade),
-        evaluations: decodeEvaluations(SEED_STATE.evalCode, teamsByGrade)
+        assignedMap: rebuildAssignedMap(teamsByGrade)
       };
     }
-    return { roster: [], teamsByGrade: {}, assignedMap: {}, evaluations: {}, evalEnabled: false };
+    return { roster: [], teamsByGrade: {}, assignedMap: {}, evalEnabled: false };
   }
   function saveState(){
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e){}
@@ -1138,12 +1250,13 @@
         return;
       }
       if(res && res.state){
-        state = res.state;
+        state = normalizeState(res.state);
       } else {
         state.roster = roster;
         state.teamsByGrade = {};
         state.assignedMap = {};
-        state.evaluations = {};
+        state.submittedIds = [];
+        state.authedIds = [];
         state.evalEnabled = false;
       }
       afterRosterChange();
@@ -1168,13 +1281,10 @@
         return;
       }
       if(res && res.state){
-        state = res.state;
+        state = normalizeState(res.state);
       } else {
         state.roster.forEach(function(s){
-          if(!newIds[s.studentId]){
-            var info = state.assignedMap[s.studentId];
-            if(info) removeStudentFromAllSlots(info.grade, s.studentId);
-          }
+          if(!newIds[s.studentId]) removeStudentFromAllSlots(s.studentId);
         });
         state.roster = newRoster;
       }
@@ -1234,17 +1344,20 @@
           return;
         }
         if(res && res.state){
-          state = res.state;
+          state = normalizeState(res.state);
         } else {
           state.roster = [];
           state.teamsByGrade = {};
           state.assignedMap = {};
-          state.evaluations = {};
+          state.submittedIds = [];
+          state.authedIds = [];
           state.evalEnabled = false;
         }
         closeResetModal();
         afterRosterChange();
         resultsUnlocked = false;
+        resultsEvaluations = null;
+        resultsPassword = null;
         showToast('전체 데이터가 초기화되었습니다');
       });
     });
@@ -1356,10 +1469,10 @@
         showToast('비밀번호가 일치하지 않습니다');
         return;
       }
+      // 명단과 팀 구성만 담는다 — 점수는 공개 파일에 들어가면 안 된다
       var snapshot = {
         roster: state.roster,
-        teamsByGrade: state.teamsByGrade,
-        evalCode: encodeEvaluations()
+        teamsByGrade: state.teamsByGrade
       };
       document.getElementById('exportOutput').value = 'var SEED_STATE = ' + JSON.stringify(snapshot) + ';';
       section.style.display = 'block';
@@ -1481,22 +1594,30 @@
     }
   }
 
-  function removeStudentFromAllSlots(grade, studentId){
-    var gd = state.teamsByGrade[grade];
-    if(!gd) return;
-    (gd.teams || []).forEach(function(t){
-      ROLES.forEach(function(role){
-        t.roles[role] = (t.roles[role] || []).filter(function(id){ return id !== studentId; });
+  /* 학생을 모든 학년의 모든 슬롯에서 빼낸다.
+   *
+   * ⚠️ 예전에는 넘겨받은 학년의 보드만 훑었다. 2·3학년 학생을 1학년 팀에
+   *    넣을 수 있게 되면서, 원래 있던 학년의 팀 명단에 학번이 그대로 남는
+   *    유령 배정이 생겼다. 그래서 학년을 가리지 않고 전부 훑는다.
+   *    (서버 Code.gs 의 같은 이름 함수와 동일한 규칙) */
+  function removeStudentFromAllSlots(studentId){
+    Object.keys(state.teamsByGrade).forEach(function(g){
+      var gd = state.teamsByGrade[g];
+      if(!gd) return;
+      (gd.teams || []).forEach(function(t){
+        ROLES.forEach(function(role){
+          t.roles[role] = (t.roles[role] || []).filter(function(id){ return id !== studentId; });
+        });
       });
+      if(gd.individual){
+        gd.individual = gd.individual.filter(function(id){ return id !== studentId; });
+      }
     });
-    if(gd.individual){
-      gd.individual = gd.individual.filter(function(id){ return id !== studentId; });
-    }
     delete state.assignedMap[studentId];
   }
 
   function assignStudentLocal(grade, studentId, target, role){
-    removeStudentFromAllSlots(grade, studentId);
+    removeStudentFromAllSlots(studentId);
     var gd = ensureGradeState(grade);
     if(target === 'individual'){
       gd.individual.push(studentId);
@@ -1511,7 +1632,7 @@
 
   function assignStudent(grade, studentId, target, role, onDone){
     callServer('assignStudent', { grade: grade, studentId: studentId, target: target, role: role }, null, function(res){
-      if(res && res.ok && res.state) state = res.state;
+      if(res && res.ok && res.state) state = normalizeState(res.state);
       else assignStudentLocal(grade, studentId, target, role);
       saveState();
       markStateSynced();
@@ -1554,7 +1675,7 @@
         renderTeamBoard();   // 서버 값으로 되돌린다
         return;
       }
-      if(res && res.state) state = res.state;
+      if(res && res.state) state = normalizeState(res.state);
       else setTeamTitleLocal(grade, teamId, title);
       saveState();
       markStateSynced();
@@ -1564,10 +1685,30 @@
     });
   }
 
+  /* 팀의 반 변경 — 교수 비밀번호가 필요하다. onDone(성공여부) 를 부른다. */
+  function setTeamSection(grade, teamId, section, password, onDone){
+    callServer('setTeamSection', { grade: grade, teamId: teamId, section: section }, password, function(res){
+      if(!res || !res.ok){
+        var why = res && res.error === 'wrong password'
+          ? '비밀번호가 일치하지 않습니다'
+          : ((res && res.error) || '서버에 연결할 수 없습니다');
+        showToast('반 변경에 실패했습니다: ' + why);
+        if(onDone) onDone(false);
+        return;
+      }
+      state = normalizeState(res.state);
+      saveState();
+      markStateSynced();
+      renderTeamBoard();
+      showToast(slotLabel(teamId) + '을 ' + section + '반으로 옮겼습니다');
+      if(onDone) onDone(true);
+    });
+  }
+
   function unassignStudent(grade, studentId, onDone){
     callServer('removeStudent', { grade: grade, studentId: studentId }, null, function(res){
-      if(res && res.ok && res.state) state = res.state;
-      else removeStudentFromAllSlots(grade, studentId);
+      if(res && res.ok && res.state) state = normalizeState(res.state);
+      else removeStudentFromAllSlots(studentId);
       saveState();
       markStateSynced();
       onDone();
@@ -1586,18 +1727,48 @@
     contentEl.style.display = 'block';
     var gd = ensureGradeState(currentTeamGrade);
     document.getElementById('teamCountInput').value = gd.teamCount;
+    updateSectionFilterUi();
     renderTeamBoard();
+  }
+
+  /* 반 필터는 반을 쓰는 학년에서만 보인다. 학년을 옮길 때 이전 학년에서
+   * 고른 반이 남아 있으면 팀이 하나도 안 보이므로 '전체'로 되돌린다. */
+  function updateSectionFilterUi(){
+    var bar = document.getElementById('teamSectionFilter');
+    var uses = gradeUsesSections(currentTeamGrade);
+    bar.style.display = uses ? 'flex' : 'none';
+    if(!uses) currentTeamSection = 'all';
+    Array.prototype.forEach.call(bar.querySelectorAll('.grade-chip'), function(b){
+      b.classList.toggle('active', b.dataset.section === currentTeamSection);
+    });
   }
 
   document.getElementById('teamGradeFilter').addEventListener('click', function(e){
     var btn = e.target.closest('.grade-chip');
     if(!btn) return;
     currentTeamGrade = btn.dataset.grade;
+    currentTeamSection = 'all';
     Array.prototype.forEach.call(this.querySelectorAll('.grade-chip'), function(b){
       b.classList.toggle('active', b === btn);
     });
     var gd = ensureGradeState(currentTeamGrade);
     document.getElementById('teamCountInput').value = gd.teamCount;
+    updateSectionFilterUi();
+    renderTeamBoard();
+  });
+
+  document.getElementById('teamSectionFilter').addEventListener('click', function(e){
+    var btn = e.target.closest('.grade-chip');
+    if(!btn) return;
+    currentTeamSection = btn.dataset.section;
+    Array.prototype.forEach.call(this.querySelectorAll('.grade-chip'), function(b){
+      b.classList.toggle('active', b === btn);
+    });
+    renderTeamBoard();
+  });
+
+  document.getElementById('showOtherGradesChk').addEventListener('change', function(){
+    showOtherGrades = this.checked;
     renderTeamBoard();
   });
 
@@ -1626,7 +1797,7 @@
 
     callServer('setTeamCount', { grade: grade, count: newCount }, null, function(res){
       if(res && res.ok && res.state){
-        state = res.state;
+        state = normalizeState(res.state);
       } else if(newCount > oldCount){
         for(var i = oldCount + 1; i <= newCount; i++){
           gd.teams.push({ id: 't' + i, name: i + '팀', roles: { '기획': [], '아트': [], '개발': [] } });
@@ -1661,17 +1832,21 @@
     return String(d.getFullYear()) + pad2(d.getMonth() + 1) + pad2(d.getDate());
   }
 
+  /* 내보내기에는 팀의 반과 학생의 명단상 학년을 함께 넣는다.
+   * 다른 학년에서 데려온 학생이 섞여 있어도 표만 보고 구분할 수 있어야 한다. */
   function buildTeamExportRows(grade){
     var gd = state.teamsByGrade[grade];
-    var rows = [['구분', '팀명', '역할', '학번', '이름', '학적반']];
+    var uses = gradeUsesSections(grade);
+    var rows = [['구분', '반', '팀명', '역할', '학번', '이름', '명단학년', '학적반']];
 
     (gd && gd.teams || []).forEach(function(team){
       var title = teamTitle(team);
+      var sec = uses ? teamSection(team) + '반' : '';
       ROLES.forEach(function(role){
         (team.roles[role] || []).forEach(function(sid){
           var s = studentById(sid);
           if(!s) return;
-          rows.push([slotLabel(team.id), title, role, s.studentId, s.name, s.section]);
+          rows.push([slotLabel(team.id), sec, title, role, s.studentId, s.name, s.grade + '학년', s.section]);
         });
       });
     });
@@ -1679,13 +1854,13 @@
     (gd && gd.individual || []).forEach(function(sid){
       var s = studentById(sid);
       if(!s) return;
-      rows.push(['개인프로젝트', '', '', s.studentId, s.name, s.section]);
+      rows.push(['개인프로젝트', '', '', '', s.studentId, s.name, s.grade + '학년', s.section]);
     });
 
     state.roster.forEach(function(s){
       if(s.grade !== grade) return;
       if(state.assignedMap[s.studentId]) return;
-      rows.push(['미배정', '', '', s.studentId, s.name, s.section]);
+      rows.push(['미배정', '', '', '', s.studentId, s.name, s.grade + '학년', s.section]);
     });
 
     return rows;
@@ -1725,7 +1900,7 @@
           showToast('초기화에 실패했습니다: ' + (res.error === 'wrong password' ? '비밀번호가 일치하지 않습니다' : (res.error || '알 수 없는 오류')));
           return;
         }
-        if(res && res.state) state = res.state;
+        if(res && res.state) state = normalizeState(res.state);
         else clearGradeAssignments(grade);
         saveState();
         markStateSynced();
@@ -1748,7 +1923,12 @@
     chip.draggable = true;
     chip.dataset.sid = student.studentId;
     var label = document.createElement('span');
-    label.innerHTML = escapeHtml(student.name) + ' <span class="sid">' + escapeHtml(student.studentId) + '</span>';
+    // 지금 보고 있는 학년과 명단상 학년이 다르면 원 소속을 함께 보여준다
+    var gradeTag = student.grade !== currentTeamGrade
+      ? ' <span class="sid">' + escapeHtml(student.grade) + '학년</span>'
+      : '';
+    label.innerHTML = escapeHtml(student.name) + gradeTag +
+      ' <span class="sid">' + escapeHtml(student.studentId) + '</span>';
     chip.appendChild(label);
     if(removable){
       var rm = document.createElement('button');
@@ -1784,21 +1964,37 @@
     var grade = currentTeamGrade;
     var gd = ensureGradeState(grade);
 
+    /* 기본은 이 학년 학생만. "다른 학년 학생도 보기"를 켜면 학년을 넘어
+     * 데려올 수 있다. 명단상 학년(s.grade)은 바꾸지 않으므로, 다른 학년
+     * 학생은 칩에 원 소속을 표시해 헷갈리지 않게 한다. */
     var unassigned = state.roster.filter(function(s){
-      return s.grade === grade && !state.assignedMap[s.studentId];
+      if(state.assignedMap[s.studentId]) return false;
+      return showOtherGrades || s.grade === grade;
     });
+    // 이 학년 학생을 먼저, 다른 학년 학생을 뒤에 둔다
+    unassigned.sort(function(a, b){
+      var an = a.grade === grade ? 0 : 1;
+      var bn = b.grade === grade ? 0 : 1;
+      if(an !== bn) return an - bn;
+      if(a.grade !== b.grade) return a.grade < b.grade ? -1 : 1;
+      return String(a.studentId) < String(b.studentId) ? -1 : 1;
+    });
+
     document.getElementById('unassignedCount').textContent = unassigned.length;
+    document.getElementById('showOtherGradesChk').checked = showOtherGrades;
     var unassignedList = document.getElementById('unassignedList');
     unassignedList.innerHTML = '';
     if(unassigned.length === 0){
       var empty = document.createElement('div');
       empty.className = 'empty-state';
       empty.style.padding = '10px 4px';
-      empty.textContent = '모두 배정되었습니다';
+      empty.textContent = showOtherGrades ? '미배정 학생이 없습니다' : '모두 배정되었습니다';
       unassignedList.appendChild(empty);
     } else {
       unassigned.forEach(function(s){
-        unassignedList.appendChild(makeChip(s, false, null));
+        var chip = makeChip(s, false, null);
+        if(s.grade !== grade) chip.classList.add('is-other-grade');
+        unassignedList.appendChild(chip);
       });
     }
 
@@ -1827,7 +2023,20 @@
 
     var grid = document.createElement('div');
     grid.className = 'team-grid';
-    (gd.teams || []).forEach(function(team){
+    var usesSections = gradeUsesSections(grade);
+    var visibleTeams = (gd.teams || []).filter(function(team){
+      if(!usesSections || currentTeamSection === 'all') return true;
+      return teamSection(team) === currentTeamSection;
+    });
+    if(usesSections && visibleTeams.length === 0){
+      var noTeam = document.createElement('div');
+      noTeam.className = 'empty-state';
+      noTeam.textContent = currentTeamSection === 'all'
+        ? '아직 팀이 없습니다. 위에서 팀 개수를 정해 주세요.'
+        : currentTeamSection + '반에 해당하는 팀이 없습니다.';
+      grid.appendChild(noTeam);
+    }
+    visibleTeams.forEach(function(team){
       var card = document.createElement('div');
       card.className = 'team-card';
       var totalInTeam = ROLES.reduce(function(sum, role){ return sum + (team.roles[role] || []).length; }, 0);
@@ -1839,6 +2048,34 @@
       slotEl.className = 'team-slot-label';
       slotEl.textContent = slotLabel(team.id);
       head.appendChild(slotEl);
+
+      /* 반을 쓰는 학년이면 팀의 반을 보여주고, 여기서 바로 바꿀 수 있게 한다.
+       * (반 변경은 교수 비밀번호가 필요하다) */
+      if(usesSections){
+        var secSel = document.createElement('select');
+        secSel.className = 'team-section-select';
+        secSel.title = '이 팀의 반';
+        SECTIONS.forEach(function(sec){
+          var opt = document.createElement('option');
+          opt.value = sec;
+          opt.textContent = sec + '반';
+          if(sec === teamSection(team)) opt.selected = true;
+          secSel.appendChild(opt);
+        });
+        (function(teamId, before){
+          secSel.addEventListener('change', function(){
+            var next = secSel.value;
+            requirePassword('반 변경', slotLabel(teamId) + '의 반을 ' + next + '반으로 바꿉니다. 비밀번호를 입력하세요.', function(pw){
+              setTeamSection(grade, teamId, next, pw, function(ok){
+                if(!ok) secSel.value = before;   // 실패하면 원래 값으로 되돌린다
+              });
+            }, function(){
+              secSel.value = before;             // 취소해도 되돌린다
+            });
+          });
+        })(team.id, teamSection(team));
+        head.appendChild(secSel);
+      }
 
       // 팀명은 자유롭게 입력할 수 있고, 저장하면 모두에게 공유된다
       var titleInput = document.createElement('input');
@@ -1971,7 +2208,7 @@
             (res.error === 'wrong password' ? '비밀번호가 일치하지 않습니다' : (res.error || '알 수 없는 오류')));
           return;
         }
-        if(res && res.state) state = res.state;
+        if(res && res.state) state = normalizeState(res.state);
         else state.evalEnabled = !open;
         saveState();
         markStateSynced();
@@ -1981,8 +2218,34 @@
     });
   });
 
+  /* ============================================================
+   * 학생 본인 확인
+   *
+   * 학번과 이름은 같은 팀원이면 다 아는 정보라, 그것만으로는 남이 내 평가를
+   * 열어보거나 내 이름으로 제출할 수 있었다. 그래서 학생이 처음 평가할 때
+   * 스스로 비밀번호를 만들고, 그 뒤로는 그 비밀번호로 본인을 증명한다.
+   *
+   * 비밀번호는 서버에서 해시로만 저장되므로 되돌려 받을 수 없다.
+   * 잊어버린 학생은 담당 교수가 "평가 결과" 탭에서 초기화해 준다.
+   *
+   * 이 변수들은 평가를 제출하거나 화면을 나가면 바로 비운다.
+   * ============================================================ */
+  var evalStudent = null;        // 지금 인증을 진행 중인 학생
+  var evalPassword = null;       // 이 화면에서만 들고 있는 학생 비밀번호
+  var evalCreateMode = false;    // true = 비밀번호 새로 만들기
+
+  function clearEvalSession(){
+    evalStudent = null;
+    evalPassword = null;
+    evalCreateMode = false;
+    document.getElementById('evalPwInput').value = '';
+    document.getElementById('evalPwInput2').value = '';
+  }
+
   function showEvalLookupView(){
+    clearEvalSession();
     document.getElementById('evalLookupView').style.display = 'block';
+    document.getElementById('evalPwView').style.display = 'none';
     var ratingView = document.getElementById('evalRatingView');
     ratingView.style.display = 'none';
     ratingView.innerHTML = '';
@@ -2002,14 +2265,103 @@
       showToast('학번과 이름이 일치하는 학생을 찾을 수 없습니다');
       return;
     }
-    renderEvalRating(student);
+    showEvalPwView(student);
   });
 
-  function renderEvalRating(student){
+  function showEvalPwView(student){
+    evalStudent = student;
+    evalCreateMode = !hasPassword(student.studentId);
+
+    document.getElementById('evalLookupView').style.display = 'none';
+    document.getElementById('evalRatingView').style.display = 'none';
+    document.getElementById('evalPwView').style.display = 'block';
+
+    var input2 = document.getElementById('evalPwInput2');
+    document.getElementById('evalPwTitle').textContent = evalCreateMode
+      ? student.name + '님, 평가용 비밀번호를 만들어 주세요'
+      : student.name + '님, 비밀번호를 입력해 주세요';
+    document.getElementById('evalPwHint').textContent = evalCreateMode
+      ? '처음 평가하시는군요. 본인만 아는 비밀번호를 정해 주세요. 다음에 들어올 때 이 비밀번호로 본인 확인을 하고, 내가 낸 평가를 다시 볼 수 있습니다.'
+      : '본인이 만든 비밀번호를 입력하면 내가 낸 평가를 보고 수정할 수 있습니다.';
+    document.getElementById('evalPwWarn').style.display = evalCreateMode ? 'block' : 'none';
+    input2.style.display = evalCreateMode ? 'block' : 'none';
+    document.getElementById('evalPwInput').value = '';
+    input2.value = '';
+    document.getElementById('evalPwOkBtn').textContent = evalCreateMode ? '비밀번호 만들기' : '확인';
+    document.getElementById('evalPwInput').focus();
+  }
+
+  document.getElementById('evalPwBackBtn').addEventListener('click', showEvalLookupView);
+  document.getElementById('evalPwInput').addEventListener('keydown', function(e){
+    if(e.key === 'Enter') document.getElementById('evalPwOkBtn').click();
+  });
+  document.getElementById('evalPwInput2').addEventListener('keydown', function(e){
+    if(e.key === 'Enter') document.getElementById('evalPwOkBtn').click();
+  });
+
+  document.getElementById('evalPwOkBtn').addEventListener('click', function(){
+    if(!evalStudent) return;
+    var pw = document.getElementById('evalPwInput').value;
+    if(!pw){
+      showToast('비밀번호를 입력해 주세요');
+      return;
+    }
+
+    if(evalCreateMode){
+      if(pw.length < 4){
+        showToast('비밀번호는 4자 이상으로 정해 주세요');
+        return;
+      }
+      if(pw !== document.getElementById('evalPwInput2').value){
+        showToast('두 비밀번호가 서로 다릅니다');
+        return;
+      }
+      var student = evalStudent;
+      callServer('setStudentPassword',
+        { studentId: student.studentId, name: student.name, password: pw }, null, function(res){
+          if(!res || !res.ok){
+            var why = !res ? '서버에 연결할 수 없습니다'
+              : res.error === 'password exists' ? '이미 비밀번호가 있습니다. 다시 조회해 주세요'
+              : res.error === 'password too short' ? '비밀번호는 4자 이상으로 정해 주세요'
+              : res.error === 'student not found' ? '학번과 이름이 명단과 일치하지 않습니다'
+              : res.error;
+            showToast('비밀번호를 만들지 못했습니다: ' + why);
+            return;
+          }
+          state = normalizeState(res.state);
+          saveState();
+          markStateSynced();
+          evalPassword = pw;
+          showToast('비밀번호를 만들었습니다');
+          renderEvalRating(student, {});
+        });
+      return;
+    }
+
+    // 이미 비밀번호가 있는 학생 — 서버에서 본인 평가를 받아오며 확인한다
+    var student2 = evalStudent;
+    callServer('getMyEvaluation', { studentId: student2.studentId, password: pw }, null, function(res){
+      if(!res || !res.ok){
+        var why2 = !res ? '서버에 연결할 수 없습니다'
+          : res.error === 'wrong student password' ? '비밀번호가 일치하지 않습니다'
+          : res.error === 'no password' ? '아직 비밀번호를 만들지 않았습니다. 다시 조회해 주세요'
+          : res.error;
+        showToast(why2);
+        return;
+      }
+      evalPassword = pw;
+      renderEvalRating(student2, (res.data && res.data.scores) || {});
+    });
+  });
+
+  /* myScores — 서버가 본인 비밀번호를 확인한 뒤 내려준 "내가 낸 평가".
+   * 남의 점수는 이 브라우저에 아예 오지 않는다. */
+  function renderEvalRating(student, myScores){
     var info = state.assignedMap[student.studentId];
     var view = document.getElementById('evalRatingView');
     view.innerHTML = '';
     document.getElementById('evalLookupView').style.display = 'none';
+    document.getElementById('evalPwView').style.display = 'none';
     view.style.display = 'block';
 
     var card = document.createElement('div');
@@ -2069,7 +2421,7 @@
       backBtn3.addEventListener('click', showEvalLookupView);
       card.appendChild(backBtn3);
     } else {
-      var savedScores = state.evaluations[student.studentId] || {};
+      var savedScores = myScores || {};
       teammates.forEach(function(tm){
         var row = document.createElement('div');
         row.className = 'teammate-row';
@@ -2126,20 +2478,28 @@
           showToast('모든 팀원에게 점수를 선택해 주세요');
           return;
         }
-        callServer('submitEvaluation', { studentId: student.studentId, scores: scores }, null, function(res){
-          if(res && !res.ok){
-            showToast(res.error === 'evaluation not open'
-              ? '평가가 마감되었습니다'
-              : '저장에 실패했습니다: ' + (res.error || '알 수 없는 오류'));
-            return;
-          }
-          if(res && res.state) state = res.state;
-          else state.evaluations[student.studentId] = scores;
-          saveState();
-          markStateSynced();
-          showToast('평가가 저장되었습니다');
+        if(!evalPassword){
+          showToast('본인 확인이 만료되었습니다. 다시 조회해 주세요');
           showEvalLookupView();
-        });
+          return;
+        }
+        callServer('submitEvaluation',
+          { studentId: student.studentId, scores: scores, password: evalPassword }, null, function(res){
+            if(!res || !res.ok){
+              var why = !res ? '서버에 연결할 수 없습니다'
+                : res.error === 'evaluation not open' ? '평가가 마감되었습니다'
+                : res.error === 'wrong student password' ? '비밀번호가 일치하지 않습니다. 다시 조회해 주세요'
+                : res.error === 'no password' ? '비밀번호를 먼저 만들어 주세요'
+                : (res.error || '알 수 없는 오류');
+              showToast('저장에 실패했습니다: ' + why);
+              return;
+            }
+            state = normalizeState(res.state);
+            saveState();
+            markStateSynced();
+            showToast('평가가 저장되었습니다');
+            showEvalLookupView();   // 비밀번호를 메모리에서 비운다
+          });
       });
       actions.appendChild(backBtn2);
       actions.appendChild(saveBtn);
@@ -2152,10 +2512,29 @@
   /* ============================================================
    * 평가 결과 — 비밀번호(명단 업로드와 동일)로 잠금
    * ============================================================ */
+  /* 전체 평가 결과를 교수 비밀번호로 받아온다.
+   * 성공하면 evaluations 객체를, 실패하면 null 을 넘겨준다.
+   * 서버가 없을 때(API_URL 없음)는 빈 객체를 넘겨 화면이 죽지 않게 한다. */
+  function fetchResults(password, onDone){
+    /* 서버에 닿지 못하면 볼 수 있는 점수도 없다. 그래도 비밀번호는
+     * 반드시 확인한다 — 확인을 건너뛰면 서버가 잠깐 죽은 사이에 아무
+     * 비밀번호로나 결과 탭이 열려버린다. */
+    function offline(){
+      checkPassword(password, function(ok){ onDone(ok ? {} : null); });
+    }
+    if(!API_URL){ offline(); return; }
+    callServer('getResults', {}, password, function(res){
+      if(!res){ offline(); return; }               // 연결 실패
+      if(!res.ok || !res.data){ onDone(null); return; }
+      onDone(res.data.evaluations || {});
+    });
+  }
+
   function computeIncomingRatings(studentId){
     var ratings = [];
-    Object.keys(state.evaluations).forEach(function(evaluatorId){
-      var scores = state.evaluations[evaluatorId];
+    var evaluations = resultsEvaluations || {};
+    Object.keys(evaluations).forEach(function(evaluatorId){
+      var scores = evaluations[evaluatorId];
       if(scores && scores[studentId] !== undefined){
         var evaluator = studentById(evaluatorId);
         ratings.push({
@@ -2186,13 +2565,39 @@
       showToast('비밀번호를 입력해 주세요');
       return;
     }
-    checkPassword(pw, function(ok){
-      if(!ok){
+    /* 예전에는 화면만 열고 점수는 이미 브라우저에 있었다. 이제는 서버가
+     * 비밀번호를 확인한 뒤에야 점수를 내려주므로, 잠금 해제와 데이터
+     * 수신이 같은 요청에서 일어난다. */
+    fetchResults(pw, function(evaluations){
+      if(evaluations === null){
         showToast('비밀번호가 일치하지 않습니다');
         return;
       }
+      resultsEvaluations = evaluations;
+      resultsPassword = pw;
       resultsUnlocked = true;
       renderResultsTab();
+    });
+  });
+
+  /* 결과 탭을 보고 있는 동안 학생이 새로 제출할 수 있으므로 다시 받아온다 */
+  document.getElementById('resultsRefreshBtn').addEventListener('click', function(){
+    if(!resultsPassword){
+      showToast('먼저 비밀번호로 잠금을 해제해 주세요');
+      return;
+    }
+    fetchResults(resultsPassword, function(evaluations){
+      if(evaluations === null){
+        showToast('비밀번호가 더 이상 유효하지 않습니다. 다시 잠금을 해제해 주세요');
+        resultsUnlocked = false;
+        resultsEvaluations = null;
+        resultsPassword = null;
+        renderResultsTab();
+        return;
+      }
+      resultsEvaluations = evaluations;
+      renderResultsList(currentResultsGrade);
+      showToast('평가 결과를 새로 받아왔습니다');
     });
   });
 
@@ -2229,8 +2634,17 @@
       countEl.textContent = '';
     }
 
+    // 이 학년 팀에 배정된 학생 중 몇 명이 평가를 냈는지 요약해서 보여준다
+    var scopeIds = Object.keys(state.assignedMap).filter(function(sid){
+      return String(state.assignedMap[sid].grade) === String(grade);
+    });
+    var doneCount = scopeIds.filter(hasSubmitted).length;
+    document.getElementById('resultsSubmitStatus').textContent = scopeIds.length
+      ? grade + '학년 팀 배정 ' + scopeIds.length + '명 중 ' + doneCount + '명 제출'
+      : grade + '학년은 아직 팀 배정이 없습니다';
+
     if(students.length === 0){
-      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--dim)">' +
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--dim)">' +
         (searching ? '학번 또는 이름이 일치하는 학생이 없습니다' : '해당 학년 학생이 없습니다') + '</td></tr>';
       return;
     }
@@ -2256,12 +2670,18 @@
       tdName.appendChild(link);
       var tdSid = document.createElement('td');
       tdSid.textContent = s.studentId;
+      /* 제출 여부는 점수가 아니라 학번 목록이므로 공개 상태로 내려온다.
+       * 비번을 만들었지만 아직 안 낸 학생을 구분해서 독촉할 수 있게 한다. */
+      var tdDone = document.createElement('td');
+      tdDone.textContent = hasSubmitted(s.studentId) ? '✓'
+        : hasPassword(s.studentId) ? '비번만' : '—';
       var tdAvg = document.createElement('td');
       tdAvg.textContent = avg;
 
       tr.appendChild(tdGrade);
       tr.appendChild(tdName);
       tr.appendChild(tdSid);
+      tr.appendChild(tdDone);
       tr.appendChild(tdAvg);
       frag.appendChild(tr);
     });
@@ -2278,6 +2698,67 @@
     input.focus();
   });
 
+  /* ============================================================
+   * 평가 결과 초기화 — 학생이 제출한 평가만 지운다. 명단과 팀 배정은
+   * 그대로 남으므로, 같은 팀 구성으로 평가를 다시 받을 수 있다.
+   * ============================================================ */
+  function openClearEvalModal(){
+    document.getElementById('clearEvalPwInput').value = '';
+    document.getElementById('clearEvalWithPw').checked = false;
+    var radios = document.getElementsByName('clearEvalScope');
+    for(var i = 0; i < radios.length; i++) radios[i].checked = radios[i].value === 'grade';
+    document.getElementById('clearEvalOverlay').style.display = 'flex';
+  }
+  function closeClearEvalModal(){
+    document.getElementById('clearEvalOverlay').style.display = 'none';
+    document.getElementById('clearEvalPwInput').value = '';
+  }
+
+  document.getElementById('resultsClearBtn').addEventListener('click', openClearEvalModal);
+  document.getElementById('clearEvalClose').addEventListener('click', closeClearEvalModal);
+  document.getElementById('clearEvalOverlay').addEventListener('click', function(e){
+    if(e.target === this) closeClearEvalModal();
+  });
+
+  document.getElementById('clearEvalConfirmBtn').addEventListener('click', function(){
+    var pw = document.getElementById('clearEvalPwInput').value;
+    if(!pw){
+      showToast('비밀번호를 입력해 주세요');
+      return;
+    }
+    var scope = 'grade';
+    var radios = document.getElementsByName('clearEvalScope');
+    for(var i = 0; i < radios.length; i++){ if(radios[i].checked) scope = radios[i].value; }
+    var withPasswords = document.getElementById('clearEvalWithPw').checked;
+
+    var what = scope === 'all' ? '전체 학년' : currentResultsGrade + '학년';
+    if(!window.confirm(what + '의 평가 결과를 지웁니다. 되돌릴 수 없습니다. 계속할까요?')) return;
+
+    var payload = { withPasswords: withPasswords };
+    if(scope === 'grade') payload.grade = currentResultsGrade;
+
+    callServer('clearEvaluations', payload, pw, function(res){
+      if(!res || !res.ok){
+        var why = !res ? '서버에 연결할 수 없습니다'
+          : res.error === 'wrong password' ? '비밀번호가 일치하지 않습니다'
+          : (res.error || '알 수 없는 오류');
+        showToast('초기화에 실패했습니다: ' + why);
+        return;
+      }
+      state = normalizeState(res.state);
+      saveState();
+      markStateSynced();
+      closeClearEvalModal();
+      // 지운 뒤의 결과를 다시 받아온다
+      resultsPassword = pw;
+      fetchResults(pw, function(evaluations){
+        resultsEvaluations = evaluations === null ? {} : evaluations;
+        renderResultsList(currentResultsGrade);
+        showToast(what + ' 평가 결과를 초기화했습니다');
+      });
+    });
+  });
+
   function openResultDetail(student, ratings, avg){
     document.getElementById('resultDetailTitle').textContent = student.name + ' (' + student.studentId + ') 평가 내역';
     var body = document.getElementById('resultDetailBody');
@@ -2290,6 +2771,45 @@
       }).join('');
       body.innerHTML = rows + '<p class="eval-hint" style="margin:14px 0 0">평균 ' + avg + '점 (' + ratings.length + '명 평가)</p>';
     }
+
+    /* 학생 비밀번호는 해시로만 저장되어 되돌려줄 수 없다. 잊어버린 학생은
+     * 여기서 초기화해 주면 새 비밀번호를 만들어 다시 들어갈 수 있다.
+     * 이미 낸 평가 점수는 지우지 않는다. */
+    var pwNote = document.createElement('p');
+    pwNote.className = 'eval-hint';
+    pwNote.style.marginTop = '14px';
+    pwNote.textContent = hasPassword(student.studentId)
+      ? '이 학생은 평가용 비밀번호를 만들어 두었습니다.'
+      : '이 학생은 아직 평가용 비밀번호를 만들지 않았습니다.';
+    body.appendChild(pwNote);
+
+    if(hasPassword(student.studentId)){
+      var resetPwBtn = document.createElement('button');
+      resetPwBtn.type = 'button';
+      resetPwBtn.className = 'ghost-btn';
+      resetPwBtn.textContent = '이 학생 비밀번호 초기화';
+      resetPwBtn.title = '학생이 비밀번호를 잊었을 때 사용합니다 (제출한 평가는 그대로 남습니다)';
+      resetPwBtn.addEventListener('click', function(){
+        requirePassword('학생 비밀번호 초기화',
+          student.name + '(' + student.studentId + ')의 평가용 비밀번호를 지웁니다. 학생이 새로 만들어야 합니다. 비밀번호를 입력하세요.',
+          function(pw){
+            callServer('resetStudentPassword', { studentId: student.studentId }, pw, function(res){
+              if(!res || !res.ok){
+                showToast('초기화에 실패했습니다: ' + (!res ? '서버에 연결할 수 없습니다' : (res.error || '알 수 없는 오류')));
+                return;
+              }
+              state = normalizeState(res.state);
+              saveState();
+              markStateSynced();
+              document.getElementById('resultDetailModalOverlay').style.display = 'none';
+              renderResultsList(currentResultsGrade);
+              showToast(student.name + '님의 비밀번호를 초기화했습니다');
+            });
+          });
+      });
+      body.appendChild(resetPwBtn);
+    }
+
     document.getElementById('resultDetailModalOverlay').style.display = 'flex';
   }
 

@@ -9,7 +9,17 @@
  *  3. 처음 배포할 때 Google 계정 권한 승인 (교수 계정 1회, 학생은 불필요)
  *  4. 발급된 웹앱 URL(.../exec)을 index3.html 의 API_URL 에 넣습니다.
  *
+ * 코드를 고친 뒤에는 반드시 "배포 관리 > 편집 > 버전: 새 버전"으로 다시
+ * 배포해야 바뀐 내용이 반영됩니다. (URL은 그대로 유지됩니다)
+ *
  * 데이터는 스크립트가 자동 생성한 구글 시트 1칸에 JSON 문자열로 저장됩니다.
+ *   A1 = 상태 JSON / B1 = 교수 비밀번호
+ *
+ * ⚠️ 공개 범위
+ *   doGet 과 doPost 는 publicState() 를 거친 데이터만 내려줍니다.
+ *   평가 점수(evaluations)와 학생 비밀번호 해시(studentAuth)는 여기에
+ *   포함되지 않습니다. 점수는 본인이 getMyEvaluation, 교수가 getResults
+ *   로 각자의 비밀번호를 내고 따로 받아갑니다.
  */
 
 var ROLES = ['기획', '아트', '개발'];
@@ -18,8 +28,53 @@ var DEFAULT_PASSWORD = '1004';
 var SHEET_NAME = 'state';
 var PROP_SHEET_ID = 'teamProjectSheetId';
 
+/* 반(수업반) 구분은 1학년만 사용한다. 2·3학년은 반 없이 팀 번호만 쓴다. */
+var SECTION_GRADES = ['1'];
+var SECTIONS = ['a', 'b', 'c'];
+var TEAMS_PER_SECTION = 10;   // 1~10팀 = a반, 11~20팀 = b반, 21~30팀 = c반
+
 function emptyState() {
-  return { roster: [], teamsByGrade: {}, assignedMap: {}, evaluations: {}, evalEnabled: false };
+  return {
+    roster: [],
+    teamsByGrade: {},
+    assignedMap: {},
+    evaluations: {},
+    evalEnabled: false,
+    studentAuth: {}   // 학번 → { salt, hash } — 학생이 직접 만든 평가용 비밀번호
+  };
+}
+
+/* ============================================================
+ * 학생 비밀번호 — 평문으로 저장하지 않는다.
+ * 학번마다 다른 salt를 붙여 SHA-256으로 해시하므로, 시트를 열어봐도
+ * (교수 포함 누구도) 학생의 비밀번호 자체는 알 수 없다.
+ * 대신 잊어버렸을 때 되돌려줄 방법도 없으므로 교수가 초기화해 준다.
+ * ============================================================ */
+function newSalt() {
+  return Utilities.getUuid();
+}
+
+function hashPassword(password, salt) {
+  var bytes = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    salt + '|' + String(password),
+    Utilities.Charset.UTF_8
+  );
+  var hex = '';
+  for (var i = 0; i < bytes.length; i++) {
+    var b = bytes[i] < 0 ? bytes[i] + 256 : bytes[i];
+    var s = b.toString(16);
+    hex += (s.length === 1 ? '0' : '') + s;
+  }
+  return hex;
+}
+
+/* 학생 비밀번호 확인. 아직 만들지 않았으면 'no password'를 돌려준다. */
+function checkStudentPassword(state, studentId, password) {
+  var rec = state.studentAuth[studentId];
+  if (!rec || !rec.hash || !rec.salt) return 'no password';
+  if (hashPassword(password, rec.salt) !== rec.hash) return 'wrong student password';
+  return null;
 }
 
 // 비밀번호 힌트(첫 글자 + * + 끝 글자). 어느 PC에서 접속하든 서버 기준으로
@@ -63,9 +118,43 @@ function readStore() {
   if (!state.teamsByGrade) state.teamsByGrade = {};
   if (!state.assignedMap) state.assignedMap = {};
   if (!state.evaluations) state.evaluations = {};
+  if (!state.studentAuth) state.studentAuth = {};
   if (typeof state.evalEnabled !== 'boolean') state.evalEnabled = false;
+  migrateTeamSections(state);
   var pw = sheet.getRange('B1').getValue();
   return { state: state, password: pw ? String(pw) : DEFAULT_PASSWORD };
+}
+
+/* ============================================================
+ * 반 정보 이관 (한 번만 효과가 있고, 여러 번 실행해도 안전하다)
+ *
+ * 반 필드가 생기기 전에는 팀 번호 범위로 반을 구분해서 쓰고 있었다.
+ *   1~10팀 = a반 / 11~20팀 = b반 / 21~30팀 = c반
+ * 이 규칙대로 기존 팀에 section을 채워 넣는다. 팀 배정 내용(roles)은
+ * 건드리지 않고 필드만 추가하므로 배정된 학생은 그대로 남는다.
+ * 이관 뒤에는 교수가 팀별로 반을 자유롭게 바꿀 수 있다.
+ * ============================================================ */
+function sectionForTeamNumber(n) {
+  var idx = Math.floor((n - 1) / TEAMS_PER_SECTION);
+  if (idx < 0) idx = 0;
+  if (idx >= SECTIONS.length) idx = SECTIONS.length - 1;
+  return SECTIONS[idx];
+}
+
+function teamNumberOf(teamId) {
+  var n = parseInt(String(teamId).replace('t', ''), 10);
+  return isNaN(n) ? 0 : n;
+}
+
+function migrateTeamSections(state) {
+  SECTION_GRADES.forEach(function (grade) {
+    var gd = state.teamsByGrade[grade];
+    if (!gd) return;
+    (gd.teams || []).forEach(function (t) {
+      if (SECTIONS.indexOf(t.section) !== -1) return;   // 이미 값이 있으면 그대로 둔다
+      t.section = sectionForTeamNumber(teamNumberOf(t.id));
+    });
+  });
 }
 
 function writeStore(state, password) {
@@ -79,9 +168,32 @@ function jsonOut(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+/* ============================================================
+ * 공개 상태 — 누구나 받아가는 데이터.
+ *
+ * ⚠️ evaluations(누가 누구에게 몇 점)와 studentAuth(비밀번호 해시)는
+ *    절대 여기에 넣지 않는다. 예전에는 state를 통째로 내려주고 있어서
+ *    개발자도구나 API 주소만으로 전교생 점수를 볼 수 있었다.
+ *    평가 점수는 본인(getMyEvaluation) 또는 교수(getResults)만
+ *    비밀번호를 내고 따로 받아간다.
+ *
+ * 화면에 필요한 "누가 제출했는지 / 누가 비밀번호를 만들었는지"는
+ * 점수가 아니라 학번 목록이므로 그대로 내려준다.
+ * ============================================================ */
+function publicState(state) {
+  return {
+    roster: state.roster,
+    teamsByGrade: state.teamsByGrade,
+    assignedMap: state.assignedMap,
+    evalEnabled: state.evalEnabled,
+    submittedIds: Object.keys(state.evaluations),
+    authedIds: Object.keys(state.studentAuth)
+  };
+}
+
 function doGet() {
   var store = readStore();
-  return jsonOut({ ok: true, state: store.state, hint: maskPassword(store.password) });
+  return jsonOut({ ok: true, state: publicState(store.state), hint: maskPassword(store.password) });
 }
 
 function doPost(e) {
@@ -103,15 +215,19 @@ function doPost(e) {
     var store = readStore();
     var result = applyAction(store, req.action, req.payload || {}, req.password);
     if (!result.ok) return jsonOut(result);
-    writeStore(store.state, result.newPassword);
+    // 조회만 하는 동작(readOnly)은 시트에 쓰지 않는다
+    if (!result.readOnly) writeStore(store.state, result.newPassword);
     // 비밀번호가 바뀌었으면 바뀐 값 기준으로 힌트를 내려준다
     var effectivePw = result.newPassword || store.password;
-    return jsonOut({
+    var out = {
       ok: true,
-      state: store.state,
+      state: publicState(store.state),
       message: result.message,
       hint: maskPassword(effectivePw)
-    });
+    };
+    // 본인 평가 / 교수용 결과처럼 비밀번호를 확인한 뒤에만 주는 데이터
+    if (result.data !== undefined) out.data = result.data;
+    return jsonOut(out);
   } catch (err) {
     return jsonOut({ ok: false, error: String(err) });
   } finally {
@@ -134,9 +250,15 @@ function ensureGradeState(state, grade) {
   return state.teamsByGrade[grade];
 }
 
-function removeStudentFromAllSlots(state, grade, studentId) {
-  var gd = state.teamsByGrade[grade];
-  if (gd) {
+/* 학생을 모든 학년의 모든 슬롯에서 빼낸다.
+ *
+ * ⚠️ 예전에는 넘겨받은 학년의 보드만 훑었다. 2·3학년 학생을 1학년 팀에
+ *    넣을 수 있게 되면서, 원래 있던 학년의 팀 명단에 학번이 그대로 남는
+ *    유령 배정이 생겼다. 그래서 학년을 가리지 않고 전부 훑는다. */
+function removeStudentFromAllSlots(state, studentId) {
+  Object.keys(state.teamsByGrade).forEach(function (g) {
+    var gd = state.teamsByGrade[g];
+    if (!gd) return;
     (gd.teams || []).forEach(function (t) {
       ROLES.forEach(function (role) {
         t.roles[role] = (t.roles[role] || []).filter(function (id) { return id !== studentId; });
@@ -145,7 +267,7 @@ function removeStudentFromAllSlots(state, grade, studentId) {
     if (gd.individual) {
       gd.individual = gd.individual.filter(function (id) { return id !== studentId; });
     }
-  }
+  });
   delete state.assignedMap[studentId];
 }
 
@@ -162,6 +284,7 @@ function applyAction(store, action, payload, password) {
       state.teamsByGrade = {};
       state.assignedMap = {};
       state.evaluations = {};
+      state.studentAuth = {};   // 명단을 갈아치우면 학생 비밀번호도 의미가 없다
       return { ok: true, message: 'roster replaced' };
 
     case 'mergeRoster': {
@@ -170,25 +293,27 @@ function applyAction(store, action, payload, password) {
       var newIds = {};
       payload.roster.forEach(function (s) { newIds[s.studentId] = true; });
       state.roster.forEach(function (s) {
-        if (!newIds[s.studentId]) {
-          var info = state.assignedMap[s.studentId];
-          if (info) removeStudentFromAllSlots(state, info.grade, s.studentId);
-        }
+        if (!newIds[s.studentId]) removeStudentFromAllSlots(state, s.studentId);
       });
       state.roster = payload.roster;
       return { ok: true, message: 'roster merged' };
     }
 
+    /* 배정 — grade 는 "배정되는 팀이 속한 학년"이고, 학생의 명단상 학년과
+     * 다를 수 있다. (2·3학년 학생이 1학년 팀에 들어가는 경우)
+     * 명단(roster)의 grade 는 건드리지 않으므로 원 소속은 그대로 남는다. */
     case 'assignStudent': {
       var grade = String(payload.grade);
-      removeStudentFromAllSlots(state, grade, payload.studentId);
+      removeStudentFromAllSlots(state, payload.studentId);
       var gd = ensureGradeState(state, grade);
       if (payload.target === 'individual') {
+        if (!gd.individual) return { ok: false, error: 'no individual slot' };
         gd.individual.push(payload.studentId);
         state.assignedMap[payload.studentId] = { grade: grade, target: 'individual' };
       } else {
         var team = gd.teams.filter(function (t) { return t.id === payload.target; })[0];
         if (!team) return { ok: false, error: 'team not found' };
+        if (ROLES.indexOf(payload.role) === -1) return { ok: false, error: 'bad role' };
         team.roles[payload.role].push(payload.studentId);
         state.assignedMap[payload.studentId] = { grade: grade, target: payload.target, role: payload.role };
       }
@@ -196,7 +321,7 @@ function applyAction(store, action, payload, password) {
     }
 
     case 'removeStudent':
-      removeStudentFromAllSlots(state, String(payload.grade), payload.studentId);
+      removeStudentFromAllSlots(state, payload.studentId);
       return { ok: true, message: 'removed' };
 
     case 'setTeamCount': {
@@ -206,7 +331,10 @@ function applyAction(store, action, payload, password) {
       var oldCount = gd2.teamCount;
       if (newCount > oldCount) {
         for (var i = oldCount + 1; i <= newCount; i++) {
-          gd2.teams.push({ id: 't' + i, name: i + '팀', roles: { '기획': [], '아트': [], '개발': [] } });
+          var fresh = { id: 't' + i, name: i + '팀', roles: { '기획': [], '아트': [], '개발': [] } };
+          // 반을 쓰는 학년이면 팀 번호에 맞는 반을 기본값으로 넣어 준다
+          if (SECTION_GRADES.indexOf(g) !== -1) fresh.section = sectionForTeamNumber(i);
+          gd2.teams.push(fresh);
         }
       } else if (newCount < oldCount) {
         gd2.teams.slice(newCount).forEach(function (t) {
@@ -234,6 +362,21 @@ function applyAction(store, action, payload, password) {
       return { ok: true, message: 'team title set' };
     }
 
+    /* 팀의 반(a/b/c) 지정 — 팀 편성을 다시 묶는 관리 작업이므로 교수 전용.
+     * 반을 쓰지 않는 학년(2·3학년)에는 지정할 수 없다. */
+    case 'setTeamSection': {
+      if (password !== store.password) return { ok: false, error: 'wrong password' };
+      var sg = String(payload.grade);
+      if (SECTION_GRADES.indexOf(sg) === -1) return { ok: false, error: 'grade has no sections' };
+      if (SECTIONS.indexOf(payload.section) === -1) return { ok: false, error: 'bad section' };
+      var sgd = state.teamsByGrade[sg];
+      if (!sgd) return { ok: false, error: 'grade not found' };
+      var steam = (sgd.teams || []).filter(function (t) { return t.id === payload.teamId; })[0];
+      if (!steam) return { ok: false, error: 'team not found' };
+      steam.section = payload.section;
+      return { ok: true, message: 'team section set' };
+    }
+
     case 'clearGrade': {
       if (password !== store.password) return { ok: false, error: 'wrong password' };
       var g2 = String(payload.grade);
@@ -259,11 +402,95 @@ function applyAction(store, action, payload, password) {
       state.evalEnabled = !!payload.enabled;
       return { ok: true, message: state.evalEnabled ? 'evaluation opened' : 'evaluation closed' };
 
-    case 'submitEvaluation':
+    /* ========================================================
+     * 학생 본인 확인 — 평가는 본인만 낼 수 있고, 본인만 볼 수 있다.
+     *
+     * 예전에는 학번만 보내면 누구든 남의 이름으로 평가를 제출하거나
+     * 덮어쓸 수 있었다. 이제 학생이 처음 평가할 때 스스로 비밀번호를
+     * 만들고, 그 뒤로는 매번 그 비밀번호로 본인을 증명한다.
+     * ======================================================== */
+
+    // 최초 1회 — 학번+이름이 명단과 일치할 때만 만들 수 있다
+    case 'setStudentPassword': {
+      var apId = String(payload.studentId || '');
+      var apName = String(payload.name || '');
+      if (!apId || !apName) return { ok: false, error: 'bad payload' };
+      if (!payload.password || String(payload.password).length < 4) {
+        return { ok: false, error: 'password too short' };
+      }
+      var apStudent = state.roster.filter(function (s) {
+        return String(s.studentId) === apId && String(s.name) === apName;
+      })[0];
+      if (!apStudent) return { ok: false, error: 'student not found' };
+      if (state.studentAuth[apId]) return { ok: false, error: 'password exists' };
+      var apSalt = newSalt();
+      state.studentAuth[apId] = { salt: apSalt, hash: hashPassword(payload.password, apSalt) };
+      return { ok: true, message: 'student password created' };
+    }
+
+    // 본인 비밀번호로 자기가 낸 평가만 받아간다 (남의 점수는 내려주지 않는다)
+    case 'getMyEvaluation': {
+      var myId = String(payload.studentId || '');
+      var myErr = checkStudentPassword(state, myId, payload.password);
+      if (myErr) return { ok: false, error: myErr };
+      return {
+        ok: true,
+        readOnly: true,
+        message: 'my evaluation',
+        data: { scores: state.evaluations[myId] || null }
+      };
+    }
+
+    case 'submitEvaluation': {
       if (!state.evalEnabled) return { ok: false, error: 'evaluation not open' };
       if (!payload.studentId || !payload.scores) return { ok: false, error: 'bad payload' };
-      state.evaluations[payload.studentId] = payload.scores;
+      var subId = String(payload.studentId);
+      var subErr = checkStudentPassword(state, subId, payload.password);
+      if (subErr) return { ok: false, error: subErr };
+      state.evaluations[subId] = payload.scores;
       return { ok: true, message: 'evaluation saved' };
+    }
+
+    // 교수용 — 전체 평가 결과. 교수 비밀번호를 확인한 뒤에만 내려준다.
+    case 'getResults': {
+      if (password !== store.password) return { ok: false, error: 'wrong password' };
+      return {
+        ok: true,
+        readOnly: true,
+        message: 'results',
+        data: { evaluations: state.evaluations }
+      };
+    }
+
+    /* 평가 결과 초기화 — 학년을 주면 그 학년 팀에 배정된 학생의 평가만,
+     * 주지 않으면 전체를 지운다. 비밀번호(studentAuth)는 기본적으로
+     * 남겨 두고, withPasswords 를 주면 같이 지운다. */
+    case 'clearEvaluations': {
+      if (password !== store.password) return { ok: false, error: 'wrong password' };
+      var ceGrade = payload.grade == null ? null : String(payload.grade);
+      var ceIds = Object.keys(state.evaluations);
+      var ceCleared = 0;
+      ceIds.forEach(function (sid) {
+        if (ceGrade !== null) {
+          var info = state.assignedMap[sid];
+          if (!info || String(info.grade) !== ceGrade) return;
+        }
+        delete state.evaluations[sid];
+        if (payload.withPasswords) delete state.studentAuth[sid];
+        ceCleared++;
+      });
+      return { ok: true, message: 'evaluations cleared: ' + ceCleared };
+    }
+
+    // 학생이 비밀번호를 잊었을 때 — 교수가 지워 주면 다시 만들 수 있다
+    case 'resetStudentPassword': {
+      if (password !== store.password) return { ok: false, error: 'wrong password' };
+      var rsId = String(payload.studentId || '');
+      if (!rsId) return { ok: false, error: 'bad payload' };
+      if (!state.studentAuth[rsId]) return { ok: false, error: 'no password' };
+      delete state.studentAuth[rsId];
+      return { ok: true, message: 'student password reset' };
+    }
 
     case 'resetAll':
       if (password !== store.password) return { ok: false, error: 'wrong password' };
