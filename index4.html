@@ -487,7 +487,7 @@
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <span class="lock-state" id="lockState">🔒 편집 잠김</span>
           <span class="sync-state is-off" id="syncState">이 브라우저에만 저장</span>
-          <button type="button" class="ghost-btn" id="exportSubjectsBtn">내보내기</button>
+          <button type="button" class="ghost-btn" id="exportSubjectsBtn">🔒 내보내기</button>
         </div>
       </div>
 
@@ -638,8 +638,8 @@
             <button type="button" class="apply-btn" id="applyWeeksBtn">적용</button>
           </div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <button type="button" class="ghost-btn" id="exportTimetableBtn">내보내기</button>
-            <button type="button" class="ghost-btn danger-btn" id="clearGradeBtn">이 학년 배치 초기화</button>
+            <button type="button" class="ghost-btn" id="exportTimetableBtn">🔒 내보내기</button>
+            <button type="button" class="ghost-btn danger-btn" id="clearGradeBtn">🔒 이 학년 배치 초기화</button>
           </div>
         </div>
 
@@ -657,7 +657,7 @@
     <div class="tab-view" id="tab-load">
       <div class="section-head">
         <h2>교수별 수업시수</h2>
-        <button type="button" class="ghost-btn" id="exportLoadBtn">내보내기</button>
+        <button type="button" class="ghost-btn" id="exportLoadBtn">🔒 내보내기</button>
       </div>
 
       <div class="load-search">
@@ -751,7 +751,7 @@
 (function(){
   /* 버전 — 올릴 때마다 뒷자리를 1씩 증가시킨다.
    * 앞자리는 지정이 있을 때만 올린다. */
-  var APP_VERSION = '1.3';
+  var APP_VERSION = '1.4';
 
   var DAYS = ['월', '화', '수', '목', '금'];
   var PERIOD_COUNT = 9;             // 9:30 시작, 50분 수업 + 10분 휴식
@@ -2653,17 +2653,19 @@
   }
 
   document.getElementById('clearGradeBtn').addEventListener('click', function(){
-    var mine = placementsOfGrade(currentGrade);
-    if(!mine.length){ showToast('배치된 과목이 없습니다'); return; }
-    if(!window.confirm(currentGrade + '학년의 배치 ' + mine.length + '건을 모두 초기화할까요?')) return;
-    state.placements = state.placements.filter(function(p){
-      var s = subjectById(p.subjectId);
-      return !s || s.grade !== currentGrade;
+    requireUnlock(function(){
+      var mine = placementsOfGrade(currentGrade);
+      if(!mine.length){ showToast('배치된 과목이 없습니다'); return; }
+      if(!window.confirm(currentGrade + '학년의 배치 ' + mine.length + '건을 모두 초기화할까요?')) return;
+      state.placements = state.placements.filter(function(p){
+        var s = subjectById(p.subjectId);
+        return !s || s.grade !== currentGrade;
+      });
+      saveState();
+      renderTimetableTab();
+      renderSubjectList();
+      showToast(currentGrade + '학년 배치를 초기화했습니다');
     });
-    saveState();
-    renderTimetableTab();
-    renderSubjectList();
-    showToast(currentGrade + '학년 배치를 초기화했습니다');
   });
 
   /* ============================================================
@@ -2830,6 +2832,10 @@
   }
 
   document.getElementById('exportLoadBtn').addEventListener('click', function(){
+    requireUnlock(doExportLoad);
+  });
+
+  function doExportLoad(){
     if(!state.subjects.length){ showToast('내보낼 과목이 없습니다'); return; }
     try {
       var wb = XLSX.utils.book_new();
@@ -2855,7 +2861,7 @@
     } catch(e){
       showToast('엑셀 저장에 실패했습니다', true);
     }
-  });
+  }
 
   function subjectSheetRows(){
     var rows = [['학기', '학년', '과목명', '반형태', '반', '교수명', '과목형태', '주횟수',
@@ -2990,8 +2996,13 @@
     }
   }
 
-  document.getElementById('exportSubjectsBtn').addEventListener('click', function(){ exportWorkbook(false); });
-  document.getElementById('exportTimetableBtn').addEventListener('click', function(){ exportWorkbook(true); });
+  // 내보내기도 자료를 밖으로 빼는 일이라 잠금을 연 사람만 할 수 있다
+  document.getElementById('exportSubjectsBtn').addEventListener('click', function(){
+    requireUnlock(function(){ exportWorkbook(false); });
+  });
+  document.getElementById('exportTimetableBtn').addEventListener('click', function(){
+    requireUnlock(function(){ exportWorkbook(true); });
+  });
 
   /* ---------- 초기 렌더 ---------- */
   renderClassLabels();
