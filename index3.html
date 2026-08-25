@@ -179,14 +179,18 @@
     display:flex;align-items:center;gap:10px;flex-wrap:wrap;
   }
   .team-slot-label{font-weight:700;font-size:14px;flex-shrink:0}
-  /* 팀의 반(a/b/c) — 1학년 팀 카드에만 나온다 */
-  .team-section-select{
-    font-family:inherit;font-size:12px;font-weight:700;color:var(--a2);
+  /* 팀의 반(a/b/c) — 1학년 팀 카드에만 나온다. 번호 구간으로 정해지므로 읽기 전용 */
+  .team-section-tag{
+    font-size:11.5px;font-weight:700;color:var(--a2);
     background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.35);
-    border-radius:7px;padding:3px 6px;cursor:pointer;flex-shrink:0;
+    border-radius:100px;padding:2px 8px;flex-shrink:0;
   }
-  .team-section-select:hover{background:rgba(34,211,238,.18)}
-  .team-section-select:focus{outline:none;border-color:rgba(34,211,238,.75)}
+  /* 반별 팀 개수 요약 (전체 반 보기) */
+  .section-count-summary{
+    display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+    font-size:12.5px;font-weight:650;color:var(--muted);
+  }
+  .section-count-summary b{color:var(--text)}
   /* 다른 학년에서 데려온 학생 — 원 소속이 다르다는 것을 눈에 띄게 한다 */
   .student-chip.is-other-grade{
     border-color:rgba(255,92,157,.45);background:rgba(255,92,157,.08);
@@ -488,11 +492,13 @@
         </div>
 
         <div class="team-toolbar">
-          <div class="team-count-field">
-            <span>팀 개수</span>
+          <!-- 1학년은 반을 고른 뒤에만 개수를 정할 수 있다 (전체 반 보기에서는 숨는다) -->
+          <div class="team-count-field" id="teamCountField">
+            <span id="teamCountLabel">팀 개수</span>
             <input type="number" id="teamCountInput" min="0" max="30" value="4">
             <button type="button" class="apply-btn" id="teamCountApplyBtn">적용</button>
           </div>
+          <div class="section-count-summary" id="sectionCountSummary" style="display:none"></div>
           <div class="team-toolbar-actions">
             <button type="button" class="ghost-btn" id="exportTeamsBtn">내보내기</button>
             <button type="button" class="ghost-btn" id="clearGradeBtn">이 학년 배정 초기화</button>
@@ -760,7 +766,7 @@
    *
    * 커밋 메시지 끝에도 같은 값을 (v1.1) 형식으로 붙인다.
    * ============================================================ */
-  var APP_VERSION = '1.0';
+  var APP_VERSION = '1.1';
 
   var ROLES = ['기획', '아트', '개발'];
   var INDIVIDUAL_GRADES = ['2', '3'];
@@ -790,6 +796,20 @@
   function teamSection(team){
     if(SECTIONS.indexOf(team.section) !== -1) return team.section;
     return sectionForTeamNumber(teamNumberOf(team.id));
+  }
+  /* 반마다 쓰는 팀 번호 구간의 시작값. a=0(1~10), b=10(11~20), c=20(21~30) */
+  function sectionBase(section){
+    return SECTIONS.indexOf(section) * TEAMS_PER_SECTION;
+  }
+  function teamsInSection(gd, section){
+    return (gd.teams || []).filter(function(t){ return teamSection(t) === section; });
+  }
+  /* 반별 팀 개수 — 서버가 내려준 값이 없으면 실제 팀 수로 센다 */
+  function sectionTeamCount(gd, section){
+    var bySec = gd.teamCountBySection;
+    var n = bySec ? parseInt(bySec[section], 10) : NaN;
+    if(!isNaN(n) && n >= 0 && n <= TEAMS_PER_SECTION) return n;
+    return teamsInSection(gd, section).length;
   }
   var STORAGE_KEY = 'teamProjectGenState_v1';
   var PASSWORD_KEY = 'teamProjectGenPassword_v1';
@@ -1701,25 +1721,9 @@
     });
   }
 
-  /* 팀의 반 변경 — 교수 비밀번호가 필요하다. onDone(성공여부) 를 부른다. */
-  function setTeamSection(grade, teamId, section, password, onDone){
-    callServer('setTeamSection', { grade: grade, teamId: teamId, section: section }, password, function(res){
-      if(!res || !res.ok){
-        var why = res && res.error === 'wrong password'
-          ? '비밀번호가 일치하지 않습니다'
-          : ((res && res.error) || '서버에 연결할 수 없습니다');
-        showToast('반 변경에 실패했습니다: ' + why);
-        if(onDone) onDone(false);
-        return;
-      }
-      state = normalizeState(res.state);
-      saveState();
-      markStateSynced();
-      renderTeamBoard();
-      showToast(slotLabel(teamId) + '을 ' + section + '반으로 옮겼습니다');
-      if(onDone) onDone(true);
-    });
-  }
+  /* 팀의 반을 개별로 바꾸는 기능은 없앴다. 반은 팀 번호 구간으로 정해지므로
+   * (a=1~10, b=11~20, c=21~30) 번호와 반이 어긋나면 반별 팀 개수 계산이 깨진다.
+   * 반을 옮기려면 한쪽 반의 팀 개수를 줄이고 다른 쪽을 늘린다. */
 
   function unassignStudent(grade, studentId, onDone){
     callServer('removeStudent', { grade: grade, studentId: studentId }, null, function(res){
@@ -1741,9 +1745,8 @@
     }
     emptyEl.style.display = 'none';
     contentEl.style.display = 'block';
-    var gd = ensureGradeState(currentTeamGrade);
-    document.getElementById('teamCountInput').value = gd.teamCount;
     updateSectionFilterUi();
+    updateTeamCountUi();
     renderTeamBoard();
   }
 
@@ -1759,6 +1762,46 @@
     });
   }
 
+  /* 팀 개수 입력칸
+   *   2·3학년        : 학년 단위로 정한다 (최대 30)
+   *   1학년 · 반 선택 : 그 반만 정한다 (최대 10)
+   *   1학년 · 전체 반 : 어느 반을 뜻하는지 알 수 없으므로 입력칸을 숨기고
+   *                    반별 현황만 보여준다. 개수는 반을 골라서 정한다.
+   */
+  function updateTeamCountUi(){
+    var gd = ensureGradeState(currentTeamGrade);
+    var field = document.getElementById('teamCountField');
+    var summary = document.getElementById('sectionCountSummary');
+    var input = document.getElementById('teamCountInput');
+    var label = document.getElementById('teamCountLabel');
+    var uses = gradeUsesSections(currentTeamGrade);
+
+    if(uses && currentTeamSection === 'all'){
+      field.style.display = 'none';
+      summary.style.display = 'flex';
+      var parts = SECTIONS.map(function(sec){
+        return sec + '반 <b>' + sectionTeamCount(gd, sec) + '팀</b>';
+      });
+      summary.innerHTML = parts.join(' · ') +
+        ' &nbsp;/&nbsp; 총 <b>' + SECTIONS.reduce(function(sum, sec){
+          return sum + sectionTeamCount(gd, sec);
+        }, 0) + '팀</b> &nbsp;— 개수를 바꾸려면 위에서 반을 고르세요';
+      return;
+    }
+
+    field.style.display = 'flex';
+    summary.style.display = 'none';
+    if(uses){
+      label.textContent = currentTeamSection + '반 팀 개수';
+      input.max = TEAMS_PER_SECTION;
+      input.value = sectionTeamCount(gd, currentTeamSection);
+    } else {
+      label.textContent = '팀 개수';
+      input.max = 30;
+      input.value = gd.teamCount || 0;
+    }
+  }
+
   document.getElementById('teamGradeFilter').addEventListener('click', function(e){
     var btn = e.target.closest('.grade-chip');
     if(!btn) return;
@@ -1767,9 +1810,8 @@
     Array.prototype.forEach.call(this.querySelectorAll('.grade-chip'), function(b){
       b.classList.toggle('active', b === btn);
     });
-    var gd = ensureGradeState(currentTeamGrade);
-    document.getElementById('teamCountInput').value = gd.teamCount;
     updateSectionFilterUi();
+    updateTeamCountUi();
     renderTeamBoard();
   });
 
@@ -1780,6 +1822,7 @@
     Array.prototype.forEach.call(this.querySelectorAll('.grade-chip'), function(b){
       b.classList.toggle('active', b === btn);
     });
+    updateTeamCountUi();
     renderTeamBoard();
   });
 
@@ -1789,6 +1832,12 @@
   });
 
   document.getElementById('teamCountApplyBtn').addEventListener('click', function(){
+    if(gradeUsesSections(currentTeamGrade)) applySectionTeamCount();
+    else applyGradeTeamCount();
+  });
+
+  /* 2·3학년 — 학년 단위로 팀 개수를 정한다 (기존 동작) */
+  function applyGradeTeamCount(){
     var input = document.getElementById('teamCountInput');
     var newCount = Math.max(0, Math.min(30, parseInt(input.value, 10) || 0));
     var grade = currentTeamGrade;
@@ -1814,6 +1863,10 @@
     callServer('setTeamCount', { grade: grade, count: newCount }, null, function(res){
       if(res && res.ok && res.state){
         state = normalizeState(res.state);
+      } else if(res && !res.ok){
+        showToast('팀 개수 변경에 실패했습니다: ' + (res.error || '알 수 없는 오류'));
+        updateTeamCountUi();
+        return;
       } else if(newCount > oldCount){
         for(var i = oldCount + 1; i <= newCount; i++){
           gd.teams.push({ id: 't' + i, name: i + '팀', roles: { '기획': [], '아트': [], '개발': [] } });
@@ -1830,12 +1883,66 @@
       }
       saveState();
       markStateSynced();
+      updateTeamCountUi();
       renderTeamBoard();
       showToast(newCount > oldCount
         ? '팀이 ' + (newCount - oldCount) + '개 추가되었습니다 (총 ' + newCount + '개)'
         : '팀이 ' + newCount + '개로 줄었습니다');
     });
-  });
+  }
+
+  /* 1학년 — 고른 반의 팀 개수만 정한다. 다른 반은 건드리지 않는다.
+   * 새 팀은 그 반의 번호 구간(a=1~10, b=11~20, c=21~30) 안에서 만들어진다. */
+  function applySectionTeamCount(){
+    var input = document.getElementById('teamCountInput');
+    var section = currentTeamSection;
+    if(section === 'all'){
+      showToast('먼저 반을 골라 주세요');
+      return;
+    }
+    var grade = currentTeamGrade;
+    var gd = ensureGradeState(grade);
+    var newCount = Math.max(0, Math.min(TEAMS_PER_SECTION, parseInt(input.value, 10) || 0));
+    var oldCount = sectionTeamCount(gd, section);
+
+    if(newCount === oldCount){
+      showToast(section + '반은 이미 ' + newCount + '개 팀입니다');
+      return;
+    }
+
+    if(newCount < oldCount){
+      var cutoff = sectionBase(section) + newCount;
+      var hasMembers = teamsInSection(gd, section).some(function(t){
+        if(teamNumberOf(t.id) <= cutoff) return false;
+        return ROLES.some(function(role){ return (t.roles[role] || []).length > 0; });
+      });
+      if(hasMembers && !window.confirm(section + '반 팀을 줄이면 뒤쪽 팀에 배정된 학생이 미배정으로 돌아갑니다. 계속할까요?')){
+        input.value = oldCount;
+        return;
+      }
+    }
+
+    callServer('setSectionTeamCount', { grade: grade, section: section, count: newCount }, null, function(res){
+      if(!res){
+        showToast('서버에 연결할 수 없어 반영하지 못했습니다');
+        updateTeamCountUi();
+        return;
+      }
+      if(!res.ok){
+        showToast(section + '반 팀 개수 변경에 실패했습니다: ' + (res.error || '알 수 없는 오류'));
+        updateTeamCountUi();
+        return;
+      }
+      state = normalizeState(res.state);
+      saveState();
+      markStateSynced();
+      updateTeamCountUi();
+      renderTeamBoard();
+      showToast(newCount > oldCount
+        ? section + '반에 팀 ' + (newCount - oldCount) + '개를 추가했습니다 (' + newCount + '팀)'
+        : section + '반을 ' + newCount + '팀으로 줄였습니다');
+    });
+  }
 
   /* ============================================================
    * 팀 배정 내보내기 — 현재 보고 있는 학년의 배정 결과를 엑셀로 저장.
@@ -2048,8 +2155,8 @@
       var noTeam = document.createElement('div');
       noTeam.className = 'empty-state';
       noTeam.textContent = currentTeamSection === 'all'
-        ? '아직 팀이 없습니다. 위에서 팀 개수를 정해 주세요.'
-        : currentTeamSection + '반에 해당하는 팀이 없습니다.';
+        ? '아직 팀이 없습니다. 위에서 반을 고르고 그 반의 팀 개수를 정해 주세요.'
+        : currentTeamSection + '반은 아직 팀이 없습니다. 위에서 팀 개수를 정해 주세요.';
       grid.appendChild(noTeam);
     }
     visibleTeams.forEach(function(team){
@@ -2065,32 +2172,13 @@
       slotEl.textContent = slotLabel(team.id);
       head.appendChild(slotEl);
 
-      /* 반을 쓰는 학년이면 팀의 반을 보여주고, 여기서 바로 바꿀 수 있게 한다.
-       * (반 변경은 교수 비밀번호가 필요하다) */
+      /* 반은 팀 번호 구간으로 정해지므로 표시만 한다.
+       * 반을 옮기려면 반별 팀 개수를 조정한다. */
       if(usesSections){
-        var secSel = document.createElement('select');
-        secSel.className = 'team-section-select';
-        secSel.title = '이 팀의 반';
-        SECTIONS.forEach(function(sec){
-          var opt = document.createElement('option');
-          opt.value = sec;
-          opt.textContent = sec + '반';
-          if(sec === teamSection(team)) opt.selected = true;
-          secSel.appendChild(opt);
-        });
-        (function(teamId, before){
-          secSel.addEventListener('change', function(){
-            var next = secSel.value;
-            requirePassword('반 변경', slotLabel(teamId) + '의 반을 ' + next + '반으로 바꿉니다. 비밀번호를 입력하세요.', function(pw){
-              setTeamSection(grade, teamId, next, pw, function(ok){
-                if(!ok) secSel.value = before;   // 실패하면 원래 값으로 되돌린다
-              });
-            }, function(){
-              secSel.value = before;             // 취소해도 되돌린다
-            });
-          });
-        })(team.id, teamSection(team));
-        head.appendChild(secSel);
+        var secTag = document.createElement('span');
+        secTag.className = 'team-section-tag';
+        secTag.textContent = teamSection(team) + '반';
+        head.appendChild(secTag);
       }
 
       // 팀명은 자유롭게 입력할 수 있고, 저장하면 모두에게 공유된다

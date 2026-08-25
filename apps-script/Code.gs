@@ -154,7 +154,44 @@ function migrateTeamSections(state) {
       if (SECTIONS.indexOf(t.section) !== -1) return;   // 이미 값이 있으면 그대로 둔다
       t.section = sectionForTeamNumber(teamNumberOf(t.id));
     });
+    migrateSectionCounts(gd);
   });
+}
+
+/* 반마다 쓰는 팀 번호 구간의 시작값. a=0(1~10), b=10(11~20), c=20(21~30).
+ * 번호로 반을 알 수 있어야 하므로 구간은 고정이다. */
+function sectionBase(section) {
+  return SECTIONS.indexOf(section) * TEAMS_PER_SECTION;
+}
+
+function teamsInSection(gd, section) {
+  return (gd.teams || []).filter(function (t) { return t.section === section; });
+}
+
+/* 팀 개수를 학년 단위로 세던 것을 반 단위로 바꾼다.
+ * 이미 있는 팀을 반별로 세기만 하므로 팀 배정에는 영향이 없다. */
+function migrateSectionCounts(gd) {
+  if (!gd.teamCountBySection || typeof gd.teamCountBySection !== 'object') {
+    gd.teamCountBySection = {};
+  }
+  SECTIONS.forEach(function (sec) {
+    var n = parseInt(gd.teamCountBySection[sec], 10);
+    if (isNaN(n) || n < 0 || n > TEAMS_PER_SECTION) {
+      gd.teamCountBySection[sec] = teamsInSection(gd, sec).length;
+    }
+  });
+  gd.teamCount = totalTeamCount(gd);
+}
+
+function totalTeamCount(gd) {
+  var sum = 0;
+  SECTIONS.forEach(function (sec) { sum += gd.teamCountBySection[sec] || 0; });
+  return sum;
+}
+
+/* 팀 목록을 번호 순으로 정렬 — 반 구간을 섞어 만들어도 화면 순서가 흔들리지 않는다 */
+function sortTeams(gd) {
+  gd.teams.sort(function (a, b) { return teamNumberOf(a.id) - teamNumberOf(b.id); });
 }
 
 function writeStore(state, password) {
@@ -324,17 +361,19 @@ function applyAction(store, action, payload, password) {
       removeStudentFromAllSlots(state, payload.studentId);
       return { ok: true, message: 'removed' };
 
+    /* 팀 개수 — 반을 쓰지 않는 학년(2·3학년)만 학년 단위로 정한다.
+     * 1학년은 반마다 따로 정하므로 setSectionTeamCount 를 쓴다. */
     case 'setTeamCount': {
       var g = String(payload.grade);
+      if (SECTION_GRADES.indexOf(g) !== -1) {
+        return { ok: false, error: 'use section team count' };
+      }
       var newCount = Math.max(0, Math.min(30, parseInt(payload.count, 10) || 0));
       var gd2 = ensureGradeState(state, g);
       var oldCount = gd2.teamCount;
       if (newCount > oldCount) {
         for (var i = oldCount + 1; i <= newCount; i++) {
-          var fresh = { id: 't' + i, name: i + '팀', roles: { '기획': [], '아트': [], '개발': [] } };
-          // 반을 쓰는 학년이면 팀 번호에 맞는 반을 기본값으로 넣어 준다
-          if (SECTION_GRADES.indexOf(g) !== -1) fresh.section = sectionForTeamNumber(i);
-          gd2.teams.push(fresh);
+          gd2.teams.push({ id: 't' + i, name: i + '팀', roles: { '기획': [], '아트': [], '개발': [] } });
         }
       } else if (newCount < oldCount) {
         gd2.teams.slice(newCount).forEach(function (t) {
@@ -346,6 +385,50 @@ function applyAction(store, action, payload, password) {
       }
       gd2.teamCount = newCount;
       return { ok: true, message: 'team count set' };
+    }
+
+    /* 반별 팀 개수 (1학년) — 반마다 자기 번호 구간 안에서 앞에서부터 채운다.
+     *   a반 t1~t10 / b반 t11~t20 / c반 t21~t30
+     * 줄이면 그 반의 뒤쪽 팀부터 사라지고, 거기 배정됐던 학생은 미배정으로
+     * 돌아간다. 다른 반의 팀은 건드리지 않는다. */
+    case 'setSectionTeamCount': {
+      var sg2 = String(payload.grade);
+      if (SECTION_GRADES.indexOf(sg2) === -1) return { ok: false, error: 'grade has no sections' };
+      if (SECTIONS.indexOf(payload.section) === -1) return { ok: false, error: 'bad section' };
+      var sec2 = payload.section;
+      var want = Math.max(0, Math.min(TEAMS_PER_SECTION, parseInt(payload.count, 10) || 0));
+      var sgd2 = ensureGradeState(state, sg2);
+      migrateSectionCounts(sgd2);
+      var base = sectionBase(sec2);
+      var have = teamsInSection(sgd2, sec2).length;
+
+      if (want > have) {
+        for (var j = have + 1; j <= want; j++) {
+          var num = base + j;
+          sgd2.teams.push({
+            id: 't' + num, name: num + '팀', section: sec2,
+            roles: { '기획': [], '아트': [], '개발': [] }
+          });
+        }
+        sortTeams(sgd2);
+      } else if (want < have) {
+        var cutoff = base + want;
+        var doomed = sgd2.teams.filter(function (t) {
+          return t.section === sec2 && teamNumberOf(t.id) > cutoff;
+        });
+        doomed.forEach(function (t) {
+          ROLES.forEach(function (role) {
+            (t.roles[role] || []).forEach(function (sid) { delete state.assignedMap[sid]; });
+          });
+        });
+        sgd2.teams = sgd2.teams.filter(function (t) {
+          return !(t.section === sec2 && teamNumberOf(t.id) > cutoff);
+        });
+      }
+
+      sgd2.teamCountBySection[sec2] = want;
+      sgd2.teamCount = totalTeamCount(sgd2);
+      return { ok: true, message: 'section team count set' };
     }
 
     /* 팀명(title) 지정 — "1팀/2팀"이라는 순번(name)은 고정이고, 그 옆에
@@ -362,20 +445,11 @@ function applyAction(store, action, payload, password) {
       return { ok: true, message: 'team title set' };
     }
 
-    /* 팀의 반(a/b/c) 지정 — 팀 편성을 다시 묶는 관리 작업이므로 교수 전용.
-     * 반을 쓰지 않는 학년(2·3학년)에는 지정할 수 없다. */
-    case 'setTeamSection': {
-      if (password !== store.password) return { ok: false, error: 'wrong password' };
-      var sg = String(payload.grade);
-      if (SECTION_GRADES.indexOf(sg) === -1) return { ok: false, error: 'grade has no sections' };
-      if (SECTIONS.indexOf(payload.section) === -1) return { ok: false, error: 'bad section' };
-      var sgd = state.teamsByGrade[sg];
-      if (!sgd) return { ok: false, error: 'grade not found' };
-      var steam = (sgd.teams || []).filter(function (t) { return t.id === payload.teamId; })[0];
-      if (!steam) return { ok: false, error: 'team not found' };
-      steam.section = payload.section;
-      return { ok: true, message: 'team section set' };
-    }
+    /* 팀의 반을 개별로 바꾸는 setTeamSection 은 없앴다.
+     * 반은 팀 번호 구간(a=1~10, b=11~20, c=21~30)으로 정해진다. 이 규칙이
+     * 있어야 반별 팀 개수를 세고 새 팀을 어느 번호로 만들지 알 수 있다.
+     * 임의로 반만 바꾸면 번호와 반이 어긋나 개수 계산이 깨진다.
+     * 반을 옮기려면 한쪽 반 개수를 줄이고 다른 쪽을 늘린다. */
 
     case 'clearGrade': {
       if (password !== store.password) return { ok: false, error: 'wrong password' };
