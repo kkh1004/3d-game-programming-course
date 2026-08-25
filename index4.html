@@ -755,7 +755,7 @@
 (function(){
   /* 버전 — 올릴 때마다 뒷자리를 1씩 증가시킨다.
    * 앞자리는 지정이 있을 때만 올린다. */
-  var APP_VERSION = '1.8';
+  var APP_VERSION = '1.9';
 
   /* 한 학기는 15주로 고정한다. 학점당 강의시간(시수 × 15주)의 기준이라
    * 시간표를 몇 주로 운영하든 이 값은 바뀌지 않는다. */
@@ -1455,8 +1455,6 @@
       var other = subjectById(p.subjectId);
       if(!other) return;
       if(p.day !== day) return;
-      // 주 운영 과목과 잔여 주차 과목은 서로 만나지 않는다
-      if(isLeftoverSubject(subject) !== isLeftoverSubject(other)) return;
       var theirs = placementWeekRange(other);
       var from = Math.max(mine.start, theirs.start);
       var to = Math.min(mine.end, theirs.end);
@@ -1500,6 +1498,8 @@
 
     var mySpan = spanOf(subject);
     forEachOverlap(subject, session, day, start, function(g, p, other){
+      // 잔여 주차 과목은 별도 시간표라 반·교수를 함께 따지지 않는다
+      if(isLeftoverSubject(other)) return;
       var where = g + '학년 ' + p.day + ' ' + periodLabel(p.start);
       // 같은 학년에서 칸이 겹치면 같은 학생이 두 수업을 듣게 된다.
       // 학적반 A(1~2칸)와 수업반 a(1칸)·b(2~3칸)처럼 형태가 달라도 칸이 겹치면 잡힌다.
@@ -1520,9 +1520,9 @@
     var leftover = isLeftoverSubject(subject);
     forEachOverlap(subject, session, day, start, function(g, p, other){
       if(p.room !== room) return;
-      /* 잔여 주차에서는 같은 학년끼리 강의실을 같이 써도 된다.
-       * 그 학년의 앞선 수업은 주 운영 기간에 이미 끝났기 때문이다.
-       * 다른 학년과는 실제로 같은 시간에 그 방을 쓰게 되므로 그대로 막는다. */
+      /* 잔여 주차에서는 같은 학년끼리만 강의실을 같이 쓸 수 있다.
+       * 그 학년의 앞선 수업은 이미 끝났기 때문이다.
+       * 다른 학년은 주 운영 수업이든 잔여 수업이든 그 방을 잡고 있으므로 막는다. */
       if(leftover && g === subject.grade) return;
       problems.push(g + '학년 ' + other.name + ' 사용 중 (' + p.day + ' ' + periodLabel(p.start) + ')');
     });
