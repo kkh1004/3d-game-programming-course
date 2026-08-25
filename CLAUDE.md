@@ -22,14 +22,14 @@
 |---|---|---|---|---|---|
 | `index.html` | **공지 메일 작성기** | 공지 유형·대상 고르면 메일 초안 생성 → Gmail로 바로 발송 | 1,138줄 | Google OAuth + Gmail API | [docs/01-공지메일작성기.md](docs/01-공지메일작성기.md) |
 | `index2.html` | **과목 소개페이지** | 3D게임프로그래밍 홍보용 정적 랜딩 페이지 | 557줄 | 없음 | [docs/02-과목소개페이지.md](docs/02-과목소개페이지.md) |
-| `index3.html` | **프로젝트팀 관리 시스템** | 명단 업로드 → 팀 배정 → 팀원 상호평가 → 결과 집계 | 2,321줄 | Apps Script `Code.gs` | [docs/03-프로젝트팀관리.md](docs/03-프로젝트팀관리.md) |
-| `index4.html` | **시간표 생성기** | 과목·강의실 등록 → 드래그로 시간표 배치 → 교수별 시수 집계 | 3,193줄 | Apps Script `Timetable.gs` | [docs/04-시간표생성기.md](docs/04-시간표생성기.md) |
+| `index3.html` | **프로젝트팀 관리 시스템** (v1.0) | 명단 업로드 → 팀 배정 → 팀원 상호평가 → 결과 집계 | 2,859줄 | Apps Script `Code.gs` | [docs/03-프로젝트팀관리.md](docs/03-프로젝트팀관리.md) |
+| `index4.html` | **시간표 생성기** (v1.13) | 과목·강의실 등록 → 드래그로 시간표 배치 → 교수별 시수 집계 | 3,193줄 | Apps Script `Timetable.gs` | [docs/04-시간표생성기.md](docs/04-시간표생성기.md) |
 
 ## 부속 파일
 
 | 경로 | 소속 | 설명 |
 |---|---|---|
-| `apps-script/Code.gs` | index3 전용 | 팀 관리 공유 데이터 백엔드 (285줄) |
+| `apps-script/Code.gs` | index3 전용 | 팀 관리 공유 데이터 백엔드 (512줄) |
 | `apps-script/Timetable.gs` | index4 전용 | 시간표 공유 데이터 백엔드 (216줄) |
 | `img/favicon.png` | 공용 | 파비콘 |
 | `img/roster-format-guide.svg` | index3 전용 | 명단 엑셀 형식 안내 이미지 |
@@ -50,6 +50,30 @@
 - 구글 OAuth 승인된 자바스크립트 원본: `https://kkh1004.github.io`
 - `.gs` 파일은 **저장소에 push해도 반영되지 않는다.** script.google.com에서 직접 붙여넣고 "배포 관리 > 편집 > 버전: 새 버전"으로 재배포해야 한다.
 
+## 🔢 버전 관리 규칙
+
+`index3.html` 과 `index4.html` 은 각각 `APP_VERSION` 상수를 갖는다.
+**두 앱은 서로 독립된 버전 줄이다.** 한쪽을 올려도 다른 쪽은 그대로 둔다.
+
+| 앱 | 현재 | 표시 위치 |
+|---|---|---|
+| `index3.html` 프로젝트팀 관리 | **v1.0** | 상단 배지(`verBadge`) + 푸터(`verFooter`) |
+| `index4.html` 시간표 생성기 | **v1.13** | 상단 배지(`verBadge`) + 푸터(`verFooter`) |
+
+`index.html` 과 `index2.html` 은 버전을 쓰지 않는다.
+
+### 올리는 방법
+
+- **뒷자리 (1.0 → 1.1)** — 기능을 고칠 때마다 **매번 올린다.** 사용자가 요청하지 않아도 올린다.
+- **앞자리 (1.9 → 2.0)** — 김강호 교수가 **명시적으로 요청할 때만** 올린다. 임의로 올리지 않는다.
+- 뒷자리는 10에서 넘어가지 않는다. `1.9` 다음은 `1.10`, 그 다음은 `1.11` (index4가 이미 v1.13이다).
+
+작업할 때마다:
+1. 해당 파일의 `APP_VERSION` 값을 올린다
+2. 커밋 메시지 끝에 같은 값을 `(v1.1)` 형식으로 붙인다
+
+버전은 화면에 보이므로, **사용자가 "배포된 것이 최신인지" 확인하는 근거**다. 빠뜨리면 안 된다.
+
 ## 커밋 메시지 관례
 
 기존 이력은 영어 명령문 + 버전 표기 형식이다. 그대로 따를 것.
@@ -58,8 +82,6 @@
 Set the operating weeks per grade (v1.13)
 Cap a session at 4 hours and say what to change when it will not fit (v1.12)
 ```
-
-버전이 붙는 건 `index4.html` 뿐이다 (`APP_VERSION` 상수). 나머지는 버전 표기 없음.
 
 ## 미해결 사항
 
