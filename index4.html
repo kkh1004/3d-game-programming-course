@@ -263,6 +263,36 @@
   }
   .lock-state.is-open{color:#8ef0c8;border-color:rgba(61,220,151,.4)}
 
+  /* ---------- 공유 상태 / 로딩 표시 ---------- */
+  .sync-state{
+    font-size:12.5px;font-weight:650;color:var(--dim);
+    border:1px solid var(--stroke);background:rgba(255,255,255,.04);
+    border-radius:100px;padding:5px 12px;
+  }
+  .sync-state.is-live{color:#7fe6f5;border-color:rgba(34,211,238,.4)}
+  .sync-state.is-off{color:var(--dim)}
+
+  .loading-badge{
+    position:fixed;left:50%;top:18px;transform:translate(-50%,-14px);
+    display:flex;align-items:center;gap:9px;
+    background:#16161f;border:1px solid rgba(34,211,238,.4);color:var(--text);
+    font-size:13px;font-weight:650;padding:9px 18px;border-radius:100px;
+    box-shadow:0 12px 30px rgba(0,0,0,.45);
+    opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;
+    z-index:120;
+  }
+  .loading-badge.show{opacity:1;transform:translate(-50%,0)}
+  .loading-spinner{
+    width:13px;height:13px;border-radius:50%;flex-shrink:0;
+    border:2px solid rgba(255,255,255,.2);border-top-color:var(--a2);
+    animation:spin .7s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){
+    .loading-spinner{animation:none}
+    .loading-badge{transition:none}
+  }
+
   .label-checks{display:flex;gap:8px;flex-wrap:wrap;padding-top:3px}
   .label-check{
     display:inline-flex;align-items:center;gap:6px;cursor:pointer;
@@ -371,6 +401,7 @@
         <h2>등록된 과목 <span class="badge" id="subjectCount">0</span></h2>
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <span class="lock-state" id="lockState">🔒 편집 잠김</span>
+          <span class="sync-state is-off" id="syncState">이 브라우저에만 저장</span>
           <button type="button" class="ghost-btn" id="exportSubjectsBtn">내보내기</button>
         </div>
       </div>
@@ -515,6 +546,8 @@
   </div>
 </footer>
 
+<div class="loading-badge" id="loadingBadge"><span class="loading-spinner"></span>데이터 갱신 중…</div>
+
 <div class="toast" id="toast"></div>
 
 <div class="modal-overlay" id="pwOverlay" style="display:none">
@@ -554,8 +587,8 @@
   var DEFAULT_ROOMS = ['801', '805', '808', '901', '905-1', '905-2'];
   var LABELS = { '학적': ['A', 'B'], '수업': ['a', 'b', 'c'] };
   var STORAGE_KEY = 'timetableGenState_v1';
-  var PASSWORD = '1004';
-  var UNLOCK_KEY = 'timetableUnlocked_v1';
+  var DEFAULT_PASSWORD = '1004';          // 서버에 닿지 못할 때만 쓰는 예비 값
+  var AUTH_KEY = 'timetableAuth_v1';      // 잠금 해제에 쓴 비밀번호 (탭을 닫으면 사라짐)
 
   /* ============================================================
    * 반 배치 구조
@@ -642,32 +675,53 @@
     };
   }
 
+  // 저장된 값이 비었거나 예전 형식이어도 화면이 깨지지 않도록 모양을 맞춘다
+  function normalizeState(s){
+    if(!s || typeof s !== 'object') return emptyState();
+    if(!s.subjects) s.subjects = [];
+    if(!s.rooms || !s.rooms.length) s.rooms = DEFAULT_ROOMS.slice();
+    if(!s.totalWeeks) s.totalWeeks = 15;
+    if(!s.boardsByGrade) s.boardsByGrade = { '1': [], '2': [], '3': [] };
+    GRADES.forEach(function(g){ if(!s.boardsByGrade[g]) s.boardsByGrade[g] = []; });
+    return s;
+  }
+
   function loadState(){
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
-      if(raw){
-        var s = JSON.parse(raw);
-        if(!s.subjects) s.subjects = [];
-        if(!s.rooms || !s.rooms.length) s.rooms = DEFAULT_ROOMS.slice();
-        if(!s.totalWeeks) s.totalWeeks = 15;
-        if(!s.boardsByGrade) s.boardsByGrade = { '1': [], '2': [], '3': [] };
-        GRADES.forEach(function(g){ if(!s.boardsByGrade[g]) s.boardsByGrade[g] = []; });
-        return s;
-      }
+      if(raw) return normalizeState(JSON.parse(raw));
     } catch(e){}
     return emptyState();
   }
+
+  /* 서버에서 받은 상태를 반영하는 중에는 다시 서버로 되돌려 보내지 않는다
+   * (받은 것을 그대로 되쏘는 무한 왕복 방지) */
+  var applyingServer = false;
+
   function saveState(){
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e){}
+    if(!applyingServer) schedulePush();
   }
 
   var state = loadState();
   var currentGrade = '1';
   var nextId = 1;
-  state.subjects.forEach(function(s){
-    var n = parseInt(String(s.id).replace('s', ''), 10);
-    if(!isNaN(n) && n >= nextId) nextId = n + 1;
-  });
+
+  /* 과목(s1, s2…)과 구간(b1, b2…)이 같은 카운터를 나눠 쓰므로
+   * 다시 열었을 때 양쪽 모두를 훑어야 이미 쓰인 번호를 다시 내주지 않는다. */
+  function syncNextId(){
+    nextId = 1;
+    function note(id){
+      var n = parseInt(String(id).replace(/^[a-z]/, ''), 10);
+      if(!isNaN(n) && n >= nextId) nextId = n + 1;
+    }
+    state.subjects.forEach(function(s){ note(s.id); });
+    GRADES.forEach(function(g){
+      (state.boardsByGrade[g] || []).forEach(function(b){ note(b.id); });
+    });
+  }
+  syncNextId();
+
   function newId(prefix){ return prefix + (nextId++); }
 
   function subjectById(id){
@@ -676,6 +730,215 @@
     }
     return null;
   }
+
+  /* ============================================================
+   * API_URL — Google Apps Script 웹앱 URL (apps-script/Timetable.gs 참고).
+   * 값이 있으면 시간표가 서버에 저장되어 모든 방문자가 같은 내용을 보게 됩니다.
+   * 비워두면 예전처럼 이 브라우저에만 저장됩니다.
+   *
+   * ※ 프로젝트팀 관리 시스템(index3.html)과는 다른 URL이어야 합니다.
+   * ============================================================ */
+  var API_URL = 'https://script.google.com/macros/s/AKfycbx6rZ5zs6SWRi7e9uhGXg7cuXW3jsRXMTCaN4ug2BpByDauwiioECjB6MezmhUOxIadAA/exec';
+
+  /* ---------- 잠금 해제에 쓴 비밀번호 ----------
+   * 서버에 저장할 때마다 함께 보내야 하므로 값을 들고 있는다.
+   * sessionStorage 라서 탭을 닫으면 사라진다. */
+  function getAuthPassword(){
+    try { return sessionStorage.getItem(AUTH_KEY) || ''; } catch(e){ return ''; }
+  }
+  function setAuthPassword(pw){
+    try { sessionStorage.setItem(AUTH_KEY, pw); } catch(e){}
+  }
+  function clearAuthPassword(){
+    try { sessionStorage.removeItem(AUTH_KEY); } catch(e){}
+  }
+
+  /* ---------- 로딩 표시 ---------- *
+   * 서버 요청이 하나라도 진행 중이면 "데이터 갱신 중…" 배지를 띄운다.
+   * 여러 요청이 겹칠 수 있으므로 개수를 세서 마지막 요청이 끝날 때 감춘다. */
+  var busyCount = 0;
+  function setBusy(on){
+    busyCount += on ? 1 : -1;
+    if(busyCount < 0) busyCount = 0;
+    var badge = document.getElementById('loadingBadge');
+    if(badge) badge.classList.toggle('show', busyCount > 0);
+  }
+
+  var serverHint = null;    // 서버가 내려준 비밀번호 힌트
+  var serverRev = null;     // 마지막으로 받은 리비전 번호
+  var lastStateJson = '';   // 서버가 마지막으로 내려준 내용 (같으면 다시 안 그림)
+
+  function updateSyncUi(){
+    var el = document.getElementById('syncState');
+    if(!el) return;
+    if(!API_URL){
+      el.textContent = '이 브라우저에만 저장';
+      el.className = 'sync-state is-off';
+      return;
+    }
+    el.textContent = serverRev == null ? '서버 연결 중…' : '🔗 모두와 공유 중';
+    el.className = 'sync-state' + (serverRev == null ? ' is-off' : ' is-live');
+  }
+
+  function callServer(action, payload, password, onDone){
+    if(!API_URL){ onDone(null); return; }
+    setBusy(true);
+    fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: action, payload: payload || {}, password: password })
+    })
+      .then(function(r){ return r.json(); })
+      .then(function(res){
+        setBusy(false);
+        if(res && res.hint) serverHint = res.hint;
+        onDone(res);
+      })
+      .catch(function(){
+        setBusy(false);
+        showToast('서버 연결에 실패해 이 브라우저에만 저장합니다', true);
+        onDone(null);
+      });
+  }
+
+  /* ============================================================
+   * 서버로 올리기
+   *
+   * 끌어다 놓을 때마다 요청을 보내면 너무 잦으므로 잠깐 모았다가 한 번에 보낸다.
+   * baseRev 를 함께 보내서, 보내는 사이에 다른 사람이 저장했으면 서버가 거부한다.
+   * ============================================================ */
+  var PUSH_DELAY_MS = 700;
+  var pushTimer = null;
+  var pushPending = false;
+  var pushInFlight = false;
+
+  function schedulePush(){
+    if(!API_URL) return;
+    if(!getAuthPassword()) return;     // 잠금을 연 사람만 서버에 올린다
+    pushPending = true;
+    if(pushTimer) clearTimeout(pushTimer);
+    pushTimer = setTimeout(flushPush, PUSH_DELAY_MS);
+  }
+
+  function flushPush(){
+    pushTimer = null;
+    if(pushInFlight || !pushPending) return;   // 진행 중이면 끝난 뒤 이어서 보낸다
+    var pw = getAuthPassword();
+    if(!pw) return;
+
+    var sending = JSON.stringify(state);
+    pushPending = false;
+    pushInFlight = true;
+
+    callServer('saveState', { state: state, baseRev: serverRev }, pw, function(res){
+      pushInFlight = false;
+      if(res && res.ok){
+        serverRev = res.rev;
+        lastStateJson = sending;
+        updateSyncUi();
+      } else if(res && res.error === 'stale'){
+        showToast('다른 곳에서 먼저 저장했습니다. 최신 시간표를 불러옵니다', true);
+        if(res.state) applyServerState(res.state, res.rev);
+      } else if(res && res.error === 'wrong password'){
+        clearAuthPassword();
+        updateLockUi();
+        showToast('비밀번호가 바뀌었습니다. 다시 잠금을 열어 주세요', true);
+      } else if(res){
+        showToast('서버 저장에 실패했습니다 (' + res.error + ')', true);
+      }
+      if(pushPending) flushPush();     // 보내는 사이에 또 바뀌었으면 이어서
+    });
+  }
+
+  /* ============================================================
+   * 서버에서 받아오기 — 최초 1회 + 주기적 폴링
+   * ============================================================ */
+  var POLL_INTERVAL_MS = 5000;
+  var HIDDEN_POLL_FACTOR = 4;   // 화면이 가려져 있을 땐 20초에 한 번만
+
+  // 입력·수정 중이면 화면을 새로 그리지 않는다 (작성 중인 내용 보호)
+  function uiBusy(){
+    var ids = ['pwOverlay', 'roomPickOverlay'];
+    for(var i = 0; i < ids.length; i++){
+      var el = document.getElementById(ids[i]);
+      if(el && el.style.display !== 'none') return true;
+    }
+    if(editingId) return true;                    // 과목 수정 중
+    if(pushPending || pushInFlight) return true;  // 내가 보낸 내용이 아직 반영 전
+    var active = document.activeElement;
+    if(active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return true;
+    return false;
+  }
+
+  function applyServerState(newState, rev){
+    var incoming = JSON.stringify(newState);   // 받은 그대로를 비교 기준으로 남긴다
+
+    applyingServer = true;
+    state = normalizeState(newState);
+    syncNextId();
+    GRADES.forEach(reflowBoards);
+    saveState();                                // localStorage 에만 반영
+    applyingServer = false;
+
+    if(rev != null) serverRev = rev;
+    lastStateJson = incoming;
+
+    renderRooms();
+    renderSubjectList();
+    var activeBtn = document.querySelector('.top-tab-btn.active');
+    if(activeBtn && activeBtn.dataset.tab === 'timetable') renderTimetableTab();
+    updateSyncUi();
+  }
+
+  /* 첫 요청은 Apps Script가 깨어나는 중이라 간헐적으로 실패한다.
+   * 실패하면 잠시 뒤 한 번 더 시도해서 첫 화면이 옛 데이터로 남지 않게 한다. */
+  function syncFromServer(retriesLeft){
+    if(!API_URL) return;
+    if(retriesLeft === undefined) retriesLeft = 2;
+    setBusy(true);
+    fetch(API_URL)
+      .then(function(r){ return r.json(); })
+      .then(function(res){
+        setBusy(false);
+        if(!res || !res.ok || !res.state) return;
+        if(res.hint) serverHint = res.hint;
+        applyServerState(res.state, res.rev);
+      })
+      .catch(function(){
+        setBusy(false);
+        if(retriesLeft > 0){
+          setTimeout(function(){ syncFromServer(retriesLeft - 1); }, 1200);
+        }
+      });
+  }
+
+  // 화면이 가려져 있으면(다른 탭 등) 요청 횟수를 줄이되 완전히 멈추지는 않는다
+  var pollTick = 0;
+  function pollServer(){
+    if(!API_URL) return;
+    pollTick++;
+    if(document.hidden && (pollTick % HIDDEN_POLL_FACTOR) !== 0) return;
+    if(uiBusy()) return;
+    fetch(API_URL)
+      .then(function(r){ return r.json(); })
+      .then(function(res){
+        if(!res || !res.ok || !res.state) return;
+        if(res.hint) serverHint = res.hint;
+        if(JSON.stringify(res.state) === lastStateJson) return;  // 변경 없음
+        if(uiBusy()) return;              // 응답 도착 사이에 편집이 시작됐을 수 있음
+        applyServerState(res.state, res.rev);
+      })
+      .catch(function(){});
+  }
+
+  /* 서버 저장이 아직 안 끝났는데 창을 닫으려 하면 알려준다 */
+  window.addEventListener('beforeunload', function(e){
+    if(!API_URL) return;
+    if(pushPending || pushInFlight){
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
 
   /* ============================================================
    * 구간(강의표) 재정렬
@@ -828,14 +1091,12 @@
    * 편집 잠금 — 한 번 풀면 창을 닫을 때까지 유지된다(sessionStorage).
    * ============================================================ */
   function isUnlocked(){
-    try { return sessionStorage.getItem(UNLOCK_KEY) === '1'; } catch(e){ return false; }
-  }
-  function setUnlocked(){
-    try { sessionStorage.setItem(UNLOCK_KEY, '1'); } catch(e){}
+    return !!getAuthPassword();
   }
 
   var pwOverlay = document.getElementById('pwOverlay');
   var pwInput = document.getElementById('pwInput');
+  var pwOkBtn = document.getElementById('pwOkBtn');
   var pwOnOk = null;
 
   function requireUnlock(onOk){
@@ -849,17 +1110,39 @@
     pwOverlay.style.display = 'none';
     pwOnOk = null;
   }
+
+  /* 비밀번호 확인은 서버가 최종 기준이다. 다른 PC에서 비밀번호를 바꿨을 수
+   * 있으므로 로컬 값만 믿고 열어 주지 않는다. 서버에 닿지 못할 때만
+   * 예비 값으로 확인한다. onResult(true|false)를 호출한다. */
+  function checkPassword(pw, onResult){
+    if(!pw){ onResult(false); return; }
+    if(!API_URL){ onResult(pw === DEFAULT_PASSWORD); return; }
+    callServer('verifyPassword', {}, pw, function(res){
+      if(res) onResult(!!res.ok);
+      else onResult(pw === DEFAULT_PASSWORD);   // 서버 연결 실패 → 예비 값으로 확인
+    });
+  }
+
   function submitPw(){
-    if(pwInput.value !== PASSWORD){
-      showToast('비밀번호가 일치하지 않습니다', true);
+    var pw = pwInput.value;
+    if(!pw){
+      showToast('비밀번호를 입력해 주세요', true);
       return;
     }
-    setUnlocked();
-    var fn = pwOnOk;
-    closePw();
-    updateLockUi();
-    showToast('편집이 잠금 해제되었습니다');
-    if(fn) fn();
+    pwOkBtn.disabled = true;
+    checkPassword(pw, function(ok){
+      pwOkBtn.disabled = false;
+      if(!ok){
+        showToast('비밀번호가 일치하지 않습니다', true);
+        return;
+      }
+      setAuthPassword(pw);
+      var fn = pwOnOk;
+      closePw();
+      updateLockUi();
+      showToast('편집이 잠금 해제되었습니다');
+      if(fn) fn();
+    });
   }
   document.getElementById('pwOkBtn').addEventListener('click', submitPw);
   document.getElementById('pwCancelBtn').addEventListener('click', closePw);
@@ -1887,6 +2170,15 @@
   updateLockUi();
   GRADES.forEach(reflowBoards);
   renderSubjectList();
+
+  /* ---------- 서버 동기화 시작 ----------
+   * 먼저 이 브라우저에 저장된 내용으로 화면을 그린 뒤, 서버 내용이 도착하면
+   * 그걸로 덮어쓴다. 서버가 없으면(API_URL 비어 있음) 예전처럼 동작한다. */
+  updateSyncUi();
+  if(API_URL){
+    syncFromServer();
+    setInterval(pollServer, POLL_INTERVAL_MS);
+  }
 })();
 </script>
 </body>
