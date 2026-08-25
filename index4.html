@@ -580,11 +580,11 @@
           </div>
           <div class="field">
             <label for="fWeekStart">시작 주차</label>
-            <input type="number" id="fWeekStart" class="input-field" min="1" max="20" value="1">
+            <input type="number" id="fWeekStart" class="input-field" min="1" max="15" value="1">
           </div>
           <div class="field">
             <label for="fWeekEnd">종료 주차</label>
-            <input type="number" id="fWeekEnd" class="input-field" min="1" max="20" value="15">
+            <input type="number" id="fWeekEnd" class="input-field" min="1" max="15" value="15">
           </div>
           <div class="field">
             <label for="fHours">기준 시수 (15주 기준 주당)</label>
@@ -633,8 +633,8 @@
         <div class="tt-toolbar">
           <div class="weeks-field">
             <span>총 운영 주차</span>
-            <input type="number" id="totalWeeksInput" min="1" max="20" value="15">
-            <span>주 (최대 20)</span>
+            <input type="number" id="totalWeeksInput" min="1" max="15" value="15">
+            <span>주 <span class="lock-note">학기 15주 중 · 남는 주차는 별도 시간표로 생성</span></span>
             <button type="button" class="apply-btn" id="applyWeeksBtn">적용</button>
           </div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -751,7 +751,11 @@
 (function(){
   /* 버전 — 올릴 때마다 뒷자리를 1씩 증가시킨다.
    * 앞자리는 지정이 있을 때만 올린다. */
-  var APP_VERSION = '1.4';
+  var APP_VERSION = '1.5';
+
+  /* 한 학기는 15주로 고정한다. 학점당 강의시간(시수 × 15주)의 기준이라
+   * 시간표를 몇 주로 운영하든 이 값은 바뀌지 않는다. */
+  var TERM_WEEKS = 15;
 
   var DAYS = ['월', '화', '수', '목', '금'];
   var PERIOD_COUNT = 9;             // 9:30 시작, 50분 수업 + 10분 휴식
@@ -898,8 +902,8 @@
         subj.weekEnd = Math.min(len, s.totalWeeks);
         didMigrate = true;
       }
-      subj.weekStart = clampWeek(subj.weekStart, s.totalWeeks);
-      subj.weekEnd = clampWeek(subj.weekEnd, s.totalWeeks);
+      subj.weekStart = clampWeek(subj.weekStart, TERM_WEEKS);
+      subj.weekEnd = clampWeek(subj.weekEnd, TERM_WEEKS);
       if(subj.weekEnd < subj.weekStart) subj.weekEnd = subj.weekStart;
       delete subj.weeks;
       // 과목 형태가 없던 예전 자료는 모두 일반으로 본다
@@ -1201,7 +1205,13 @@
    * 주차가 다른 과목(예: 1~15주 안에서 8~15주만 하는 과목)도 같은 표에 넣고,
    * 언제 진행하는지는 블록 안에 글자로 적는다. */
   function boardsFor(grade){
-    return [{ from: 1, to: state.totalWeeks }];
+    /* 총 운영 주차는 "주 시간표를 몇 주까지 쓰는지"다.
+     * 학기(15주)보다 짧게 잡으면 남는 주차만 담는 시간표를 하나 더 만든다.
+     * (예: 12주로 잡으면 1~12주 시간표 + 13~15주 시간표) */
+    var main = Math.min(state.totalWeeks, TERM_WEEKS);
+    var boards = [{ from: 1, to: main }];
+    if(main < TERM_WEEKS) boards.push({ from: main + 1, to: TERM_WEEKS });
+    return boards;
   }
 
   /* 같은 자리에 겹쳐 놓인 배치들을 한 칸으로 묶는다.
@@ -1299,7 +1309,7 @@
    * (예: 1~12주 → 45 ÷ 12 = 3…9 → 1~9주 4시간, 10~12주 3시간)
    * ============================================================ */
   function requiredHours(subject){
-    return subject.hours * state.totalWeeks;
+    return subject.hours * TERM_WEEKS;
   }
 
   function weekPlan(subject){
@@ -1341,6 +1351,7 @@
    *   회차별 시간은 가장 바쁜 주를 N등분하고 남는 시간은 앞 회차에 준다.
    * ============================================================ */
   var MAX_SESSION_HOURS = 8;         // 한 번에 몰 수 있는 최대 교시
+
 
   function isIntensive(subject){
     return subject.courseType === '집중';
@@ -1428,8 +1439,8 @@
         ' 하루 교시(' + PERIOD_COUNT + '교시)를 넘어갑니다.');
       return problems;
     }
-    if(subject.weekEnd > state.totalWeeks){
-      problems.push('종료 주차(' + subject.weekEnd + '주)가 총 운영 주차(' + state.totalWeeks + '주)를 넘어갑니다.');
+    if(subject.weekEnd > TERM_WEEKS){
+      problems.push('종료 주차(' + subject.weekEnd + '주)가 학기 주차(' + TERM_WEEKS + '주)를 넘어갑니다.');
       return problems;
     }
     var mySpan = spanOf(subject);
@@ -1649,7 +1660,7 @@
     document.getElementById('fProfessor').value = '';
     document.getElementById('fContent').value = '';
     document.getElementById('fWeekStart').value = 1;
-    document.getElementById('fWeekEnd').value = state.totalWeeks;
+    document.getElementById('fWeekEnd').value = TERM_WEEKS;
     document.getElementById('fHours').value = 3;
     document.getElementById('fCredits').value = 3;
     document.getElementById('fCourseType').value = '일반';   // 기본은 일반
@@ -1673,10 +1684,10 @@
     var intensive = document.getElementById('fCourseType').value === '집중';
     document.body.classList.toggle('intensive', intensive);
 
-    var need = hr * state.totalWeeks;
+    var need = hr * TERM_WEEKS;
     var span = we - ws + 1;
     var fake = { weekStart: ws, weekEnd: we, hours: hr };
-    var head = '총 강의시간 <b>' + need + '시간</b> (' + hr + '시간 × ' + state.totalWeeks + '주 기준)';
+    var head = '총 강의시간 <b>' + need + '시간</b> (' + hr + '시간 × ' + TERM_WEEKS + '주 기준)';
 
     if(!intensive){
       var over = maxHours(fake) > PERIOD_COUNT;
@@ -1783,11 +1794,11 @@
     var content = document.getElementById('fContent').value.trim();
     if(!name){ showToast('과목명을 입력해 주세요'); return null; }
     if(!professor){ showToast('교수명을 입력해 주세요'); return null; }
-    if(isNaN(weekStart) || weekStart < 1 || weekStart > state.totalWeeks){
-      showToast('시작 주차는 1~' + state.totalWeeks + ' 사이로 입력해 주세요'); return null;
+    if(isNaN(weekStart) || weekStart < 1 || weekStart > TERM_WEEKS){
+      showToast('시작 주차는 1~' + TERM_WEEKS + ' 사이로 입력해 주세요'); return null;
     }
-    if(isNaN(weekEnd) || weekEnd < 1 || weekEnd > state.totalWeeks){
-      showToast('종료 주차는 1~' + state.totalWeeks + ' 사이로 입력해 주세요'); return null;
+    if(isNaN(weekEnd) || weekEnd < 1 || weekEnd > TERM_WEEKS){
+      showToast('종료 주차는 1~' + TERM_WEEKS + ' 사이로 입력해 주세요'); return null;
     }
     if(weekEnd < weekStart){ showToast('종료 주차가 시작 주차보다 빠릅니다'); return null; }
     if(isNaN(hours) || hours < 1 || hours > PERIOD_COUNT){ showToast('시수는 1~' + PERIOD_COUNT + ' 사이로 입력해 주세요'); return null; }
@@ -1980,7 +1991,7 @@
 
   // 주차 범위 표기 — 전체 기간이면 굳이 범위를 쓰지 않는다
   function weekLabel(s){
-    if(s.weekStart === 1 && s.weekEnd === state.totalWeeks) return weekCount(s) + '주';
+    if(s.weekStart === 1 && s.weekEnd === TERM_WEEKS) return weekCount(s) + '주';
     return s.weekStart + '~' + s.weekEnd + '주';
   }
 
@@ -2133,33 +2144,22 @@
     requireUnlock(applyTotalWeeks);
   });
 
+  /* 총 운영 주차는 시간표를 몇 주까지 쓰는지만 정한다.
+   * 과목의 주차나 시수는 학기(15주) 기준이라 여기서 건드리지 않는다. */
   function applyTotalWeeks(){
     var input = document.getElementById('totalWeeksInput');
     var v = parseInt(input.value, 10);
-    if(isNaN(v) || v < 1 || v > 20){
-      showToast('총 주차는 1~20 사이로 입력해 주세요');
+    if(isNaN(v) || v < 1 || v > TERM_WEEKS){
+      showToast('총 운영 주차는 1~' + TERM_WEEKS + ' 사이로 입력해 주세요');
       input.value = state.totalWeeks;
       return;
     }
-    // 줄이면 종료 주차가 범위를 벗어나는 과목이 생긴다 — 먼저 알려 준다
-    var over = state.subjects.filter(function(s){ return s.weekEnd > v; });
-    if(over.length){
-      var names = over.slice(0, 3).map(function(s){ return s.name; }).join(', ');
-      if(!window.confirm('총 주차를 ' + v + '주로 줄이면 종료 주차가 넘치는 과목 ' + over.length +
-          '개(' + names + (over.length > 3 ? ' 외' : '') + ')의 주차가 ' + v + '주까지로 줄어듭니다. 계속할까요?')){
-        input.value = state.totalWeeks;
-        return;
-      }
-    }
     state.totalWeeks = v;
-    state.subjects.forEach(function(s){
-      s.weekStart = clampWeek(s.weekStart, v);
-      s.weekEnd = clampWeek(s.weekEnd, v);
-      if(s.weekEnd < s.weekStart) s.weekEnd = s.weekStart;
-    });
     saveState();
     renderTimetableTab();
-    showToast('총 운영 주차를 ' + v + '주로 설정했습니다');
+    showToast(v < TERM_WEEKS
+      ? '1~' + v + '주 시간표와 ' + (v + 1) + '~' + TERM_WEEKS + '주 시간표로 나눴습니다'
+      : '시간표를 1~' + TERM_WEEKS + '주 한 장으로 운영합니다');
   }
 
   /* ============================================================
@@ -2332,8 +2332,9 @@
 
       var head = document.createElement('div');
       head.className = 'board-head';
-      head.innerHTML = '<span>' + currentGrade + '학년 시간표</span>' +
-        '<span class="board-range">1~' + state.totalWeeks + '주</span>';
+      head.innerHTML = '<span>' + currentGrade + '학년 시간표' +
+          (boards.length > 1 ? ' · ' + (boardIdx === 0 ? '주 운영' : '잔여 주차') : '') + '</span>' +
+        '<span class="board-range">' + startW + '~' + endW + '주 (' + (endW - startW + 1) + '주)</span>';
       wrap.appendChild(head);
 
       // 요일×교시×칸 단위로 무엇이 차 있는지 계산.
@@ -2695,14 +2696,14 @@
     return Object.keys(byName).sort().map(function(prof){
       var subjects = byName[prof];
       var weeks = [];
-      for(var w = 1; w <= state.totalWeeks; w++) weeks.push(0);
+      for(var w = 1; w <= TERM_WEEKS; w++) weeks.push(0);
 
       var totalHours = 0, totalCredits = 0;
       subjects.forEach(function(s){
         totalHours += requiredHours(s);
         totalCredits += Number(s.credits) || 0;
         for(var w = s.weekStart; w <= s.weekEnd; w++){
-          if(w >= 1 && w <= state.totalWeeks) weeks[w - 1] += hoursAtWeek(s, w);
+          if(w >= 1 && w <= TERM_WEEKS) weeks[w - 1] += hoursAtWeek(s, w);
         }
       });
 
@@ -2824,7 +2825,7 @@
   function loadSheetRows(){
     var rows = [['교수명', '담당과목수', '총시간', '학점합계', '가장바쁜주(시간)']];
     var loads = professorLoads(document.getElementById('loadSearchInput').value);
-    for(var w = 1; w <= state.totalWeeks; w++) rows[0].push(w + '주');
+    for(var w = 1; w <= TERM_WEEKS; w++) rows[0].push(w + '주');
     loads.forEach(function(l){
       rows.push([l.professor, l.subjects.length, l.totalHours, l.totalCredits, l.peak].concat(l.weeks));
     });
@@ -2977,7 +2978,10 @@
             var w = [{ wch: 7 }, { wch: 12 }];
             DAYS.forEach(function(){ COL_UNITS.forEach(function(u){ w.push({ wch: u * 7 }); }); });
             ws['!cols'] = w;
-            XLSX.utils.book_append_sheet(wb, ws, (g + '학년 시간표').slice(0, 31));
+            // 잔여 주차 시간표가 따로 있으면 시트 이름에 주차를 붙인다
+            var nm = g + '학년 시간표' +
+              (boardsFor(g).length > 1 ? '(' + board.from + '-' + board.to + '주)' : '');
+            XLSX.utils.book_append_sheet(wb, ws, nm.slice(0, 31));
           });
         });
         if(!any){ showToast('시간표에 배치된 과목이 없습니다', true); return; }
