@@ -755,7 +755,7 @@
 (function(){
   /* 버전 — 올릴 때마다 뒷자리를 1씩 증가시킨다.
    * 앞자리는 지정이 있을 때만 올린다. */
-  var APP_VERSION = '1.10';
+  var APP_VERSION = '1.11';
 
   /* 한 학기는 15주로 고정한다. 학점당 강의시간(시수 × 15주)의 기준이라
    * 시간표를 몇 주로 운영하든 이 값은 바뀌지 않는다. */
@@ -1405,19 +1405,32 @@
     return subject.courseType === '집중';
   }
 
-  function sessionCount(subject){
-    if(!isIntensive(subject)) return 1;
-    return Math.max(1, subject.sessionsPerWeek || 1);
-  }
-
+  /* 회차별 시간 — 최대 시간까지 앞 회차부터 꽉 채우고 남은 시간을 뒤에 둔다.
+   * (주 10시간을 주 3회·최대 4시간으로 나누면 4, 4, 2)
+   * 다 채우고도 회차가 남으면 그 회차는 만들지 않는다. */
   function sessionHours(subject){
     var peak = maxHours(subject);
-    var n = sessionCount(subject);
-    if(n <= 1) return [peak];
-    var base = Math.floor(peak / n), extra = peak % n;
-    var out = [];
-    for(var i = 0; i < n; i++) out.push(base + (i < extra ? 1 : 0));
-    return out;
+    if(!isIntensive(subject)) return [peak];
+    var n = Math.max(1, subject.sessionsPerWeek || 1);
+    var cap = Math.min(subject.maxSessionHours || MAX_SESSION_HOURS, PERIOD_COUNT);
+    var out = [], left = peak;
+    for(var i = 0; i < n && left > 0; i++){
+      var h = Math.min(left, cap);
+      out.push(h);
+      left -= h;
+    }
+    return out.length ? out : [peak];
+  }
+
+  function sessionCount(subject){
+    return sessionHours(subject).length;
+  }
+
+  // 회차를 다 써도 담지 못한 시간 (0보다 크면 배치가 불가능하다)
+  function unfitHours(subject){
+    if(!isIntensive(subject)) return 0;
+    var used = sessionHours(subject).reduce(function(a, b){ return a + b; }, 0);
+    return maxHours(subject) - used;
   }
 
   function hoursOfSession(subject, session){
@@ -1792,20 +1805,23 @@
     }
     fake.courseType = '집중';
     fake.sessionsPerWeek = n;
+    fake.maxSessionHours = mx;
     var list = sessionHours(fake);
-    var biggest = Math.max.apply(null, list);
+    var short = unfitHours(fake);
     el.innerHTML = head +
       ' → ' + span + '주 동안 한 주에 <b>' + maxHours(fake) + '시간</b>' +
-      '<br>주 ' + n + '회로 나누면 <b>' + list.map(function(h, i){
+      '<br>최대 ' + mx + '시간씩 채우면 <b>' + list.map(function(h, i){
         return (i + 1) + '회차 ' + h + '시간';
       }).join(', ') + '</b>' +
-      (biggest > mx
-        ? '<br><span class="warn">회차당 ' + biggest + '시간이 필요해 최대 ' + mx +
-          '시간을 넘습니다. 주 횟수나 주차를 늘려 주세요.</span>'
-        : (biggest > PERIOD_COUNT
-          ? '<br><span class="warn">회차당 ' + biggest + '시간이라 하루 ' + PERIOD_COUNT + '교시를 넘어갑니다.</span>'
-          : '')) +
-      '<br><span style="color:var(--dim)">배치 탭에서 ' + n + '개 회차를 원하는 요일에 각각 놓습니다.</span>';
+      (short > 0
+        ? '<br><span class="warn">주 ' + n + '회 × 최대 ' + mx + '시간으로는 ' + short +
+          '시간이 남습니다. 주 횟수나 최대 시간을 늘려 주세요.</span>'
+        : (list.length < n
+          ? '<br><span style="color:var(--dim)">' + n + '회로 지정했지만 ' + list.length +
+            '회면 충분해서 ' + list.length + '개만 만듭니다.</span>'
+          : '') +
+          '<br><span style="color:var(--dim)">배치 탭에서 ' + list.length +
+          '개 회차를 원하는 요일에 각각 놓습니다.</span>');
   }
 
   ['fWeekStart', 'fWeekEnd', 'fHours', 'fCourseType', 'fSessions', 'fMaxSessionHours'].forEach(function(id){
@@ -1904,13 +1920,13 @@
       if(isNaN(maxSession) || maxSession < 1 || maxSession > MAX_SESSION_HOURS){
         showToast('회차당 최대 시간은 1~' + MAX_SESSION_HOURS + ' 사이로 입력해 주세요'); return null;
       }
-      // 회차로 나눠도 한 번에 담을 수 없으면 저장하지 않는다
+      // 회차를 다 써도 시간이 남으면 저장하지 않는다
       var probe = { weekStart: weekStart, weekEnd: weekEnd, hours: hours,
-                    courseType: '집중', sessionsPerWeek: sessions };
-      var biggest = Math.max.apply(null, sessionHours(probe));
-      if(biggest > maxSession){
-        showToast('회차당 ' + biggest + '시간이 필요해 최대 ' + maxSession +
-          '시간을 넘습니다.\n주 횟수를 늘리거나 주차를 늘려 주세요', true);
+                    courseType: '집중', sessionsPerWeek: sessions, maxSessionHours: maxSession };
+      var biggest = unfitHours(probe);
+      if(biggest > 0){
+        showToast('주 ' + sessions + '회 × 최대 ' + maxSession + '시간으로는 한 주 ' +
+          maxHours(probe) + '시간 중 ' + biggest + '시간이 남습니다.\n주 횟수나 최대 시간을 늘려 주세요', true);
         return null;
       }
     }
