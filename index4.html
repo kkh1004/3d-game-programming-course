@@ -293,6 +293,14 @@
     .loading-badge{transition:none}
   }
 
+  .hours-plan{
+    font-size:13px;color:var(--muted);line-height:1.7;
+    border:1px solid var(--stroke);background:rgba(255,255,255,.04);
+    border-radius:10px;padding:10px 14px;
+  }
+  .hours-plan b{color:#8ef0c8}
+  .hours-plan .warn{color:#ff9ec4}
+
   .label-checks{display:flex;gap:8px;flex-wrap:wrap;padding-top:3px}
   .label-check{
     display:inline-flex;align-items:center;gap:6px;cursor:pointer;
@@ -451,7 +459,7 @@
             <thead>
               <tr>
                 <th>학기</th><th>학년</th><th>과목명</th><th>반</th><th>교수명</th>
-                <th>주차</th><th>시수</th><th>학점</th>
+                <th>주차</th><th>주차별 시수</th><th>학점</th>
                 <th>배치 (요일·교시·강의실)</th><th>교육내용</th><th></th>
               </tr>
             </thead>
@@ -510,8 +518,11 @@
             <input type="number" id="fWeekEnd" class="input-field" min="1" max="20" value="15">
           </div>
           <div class="field">
-            <label for="fHours">시수 (연속 교시)</label>
+            <label for="fHours">기준 시수 (15주 기준 주당)</label>
             <input type="number" id="fHours" class="input-field" min="1" max="9" value="3">
+          </div>
+          <div class="field field-wide">
+            <div class="hours-plan" id="hoursPlan"></div>
           </div>
           <div class="field">
             <label for="fCredits">학점</label>
@@ -1093,8 +1104,12 @@
     placementsOfGrade(grade).forEach(function(p){
       var s = subjectById(p.subjectId);
       if(!s) return;
-      if(s.weekStart >= 1 && s.weekStart <= total) cuts[s.weekStart] = true;
-      if(s.weekEnd + 1 >= 1 && s.weekEnd + 1 <= total) cuts[s.weekEnd + 1] = true;
+      // 주차 시작·끝뿐 아니라 시수가 바뀌는 지점에서도 구간을 자른다
+      // (예: 1~12주 과목이 1~9주 4시간 / 10~12주 3시간이면 10주에서 갈린다)
+      weekPlan(s).forEach(function(seg){
+        if(seg.from >= 1 && seg.from <= total) cuts[seg.from] = true;
+        if(seg.to + 1 >= 1 && seg.to + 1 <= total) cuts[seg.to + 1] = true;
+      });
     });
 
     var points = Object.keys(cuts).map(Number).sort(function(a, b){ return a - b; });
@@ -1134,15 +1149,65 @@
   }
 
   /* ============================================================
+   * 주차별 시수 계산
+   *
+   * 총 강의시간은 학점에 따라 정해져 있다 — 기준 시수 × 총 운영 주차.
+   * (예: 3시수 × 15주 = 45시간)
+   * 주차를 줄이면 그 45시간을 남은 주에 나눠 담아야 하므로 몇 주는
+   * 시수가 늘어난다. 남는 시간은 앞쪽 주부터 배정한다.
+   * (예: 1~12주 → 45 ÷ 12 = 3…9 → 1~9주 4시간, 10~12주 3시간)
+   * ============================================================ */
+  function requiredHours(subject){
+    return subject.hours * state.totalWeeks;
+  }
+
+  function weekPlan(subject){
+    var span = weekCount(subject);
+    if(span <= 0) return [];
+    var need = requiredHours(subject);
+    var base = Math.floor(need / span);
+    var extra = need % span;                 // 앞쪽 extra 주는 1시간씩 더
+    var plan = [];
+    if(extra > 0){
+      plan.push({ from: subject.weekStart, to: subject.weekStart + extra - 1, hours: base + 1 });
+    }
+    if(extra < span){
+      plan.push({ from: subject.weekStart + extra, to: subject.weekEnd, hours: base });
+    }
+    return plan;
+  }
+
+  function hoursAtWeek(subject, week){
+    var plan = weekPlan(subject);
+    for(var i = 0; i < plan.length; i++){
+      if(week >= plan[i].from && week <= plan[i].to) return plan[i].hours;
+    }
+    return subject.hours;
+  }
+
+  function maxHours(subject){
+    var plan = weekPlan(subject);
+    var m = 0;
+    plan.forEach(function(p){ if(p.hours > m) m = p.hours; });
+    return m || subject.hours;
+  }
+
+  function planText(subject){
+    return weekPlan(subject).map(function(p){
+      return p.from + (p.to > p.from ? '~' + p.to : '') + '주 ' + p.hours + '시간';
+    }).join(', ');
+  }
+
+  /* ============================================================
    * 배치 가능 여부 검사
    *   같은 요일 + 교시 겹침 + 주차 겹침일 때
    *     - 같은 강의실   → 불가 (강의실은 학년 공용)
    *     - 같은 학년·반형태·반 → 불가 (학생이 두 곳에 있을 수 없음)
    *     - 같은 교수      → 불가
    * ============================================================ */
-  // 겹치는 배치(같은 요일 + 교시 겹침 + 주차 겹침)를 훑는다
+  // 겹치는 배치(같은 요일 + 교시 겹침 + 주차 겹침)를 훑는다.
+  // 시수가 주차마다 다를 수 있으므로 겹치는 주를 하나씩 보며 판단한다.
   function forEachOverlap(subject, day, start, fn){
-    var span = subject.hours;
     var mine = placementWeekRange(subject);
     state.placements.forEach(function(p){
       if(p.subjectId === subject.id) return;            // 자기 자신(이동)은 제외
@@ -1150,9 +1215,16 @@
       if(!other) return;
       if(p.day !== day) return;
       var theirs = placementWeekRange(other);
-      if(mine.end < theirs.start || theirs.end < mine.start) return;              // 주차가 안 겹침
-      if(start + span - 1 < p.start || p.start + other.hours - 1 < start) return; // 교시가 안 겹침
-      fn(other.grade, p, other);
+      var from = Math.max(mine.start, theirs.start);
+      var to = Math.min(mine.end, theirs.end);
+      if(from > to) return;                             // 주차가 안 겹침
+
+      var hit = false;
+      for(var w = from; w <= to && !hit; w++){
+        var mh = hoursAtWeek(subject, w), oh = hoursAtWeek(other, w);
+        if(!(start + mh - 1 < p.start || p.start + oh - 1 < start)) hit = true;
+      }
+      if(hit) fn(other.grade, p, other);
     });
   }
 
@@ -1163,8 +1235,11 @@
   // 강의실과 무관한 검사 (교시 범위, 주차 범위, 반 중복, 교수 중복, 자리 점유)
   function checkBase(grade, subject, day, start){
     var problems = [];
-    if(start + subject.hours > PERIOD_COUNT){
-      problems.push('시수 ' + subject.hours + '시간이 하루 교시(' + PERIOD_COUNT + '교시)를 넘어갑니다.');
+    // 시수가 가장 많은 주를 기준으로 하루 교시 안에 들어가야 한다
+    var need = maxHours(subject);
+    if(start + need > PERIOD_COUNT){
+      problems.push('가장 긴 주가 ' + need + '시간(' + planText(subject) + ')이라 하루 교시(' +
+        PERIOD_COUNT + '교시)를 넘어갑니다.');
       return problems;
     }
     if(subject.weekEnd > state.totalWeeks){
@@ -1391,7 +1466,34 @@
     document.getElementById('fHours').value = 3;
     document.getElementById('fCredits').value = 3;
     renderClassLabels();          // 선택했던 반 체크도 함께 해제
+    renderHoursPlan();
   }
+
+  /* 입력한 주차·시수로 주차별 시간이 어떻게 나뉘는지 즉시 보여준다 */
+  function renderHoursPlan(){
+    var el = document.getElementById('hoursPlan');
+    if(!el) return;
+    var ws = parseInt(document.getElementById('fWeekStart').value, 10);
+    var we = parseInt(document.getElementById('fWeekEnd').value, 10);
+    var hr = parseInt(document.getElementById('fHours').value, 10);
+    if(isNaN(ws) || isNaN(we) || isNaN(hr) || we < ws || hr < 1){
+      el.textContent = '주차와 기준 시수를 입력하면 주차별 시간이 계산됩니다.';
+      return;
+    }
+    var fake = { weekStart: ws, weekEnd: we, hours: hr };
+    var need = hr * state.totalWeeks;
+    var span = we - ws + 1;
+    var over = maxHours(fake) > PERIOD_COUNT;
+    el.innerHTML =
+      '총 강의시간 <b>' + need + '시간</b> (' + hr + '시간 × ' + state.totalWeeks + '주 기준)' +
+      ' → ' + span + '주로 운영하면 <b>' + escapeHtml(planText(fake)) + '</b>' +
+      (over ? '<br><span class="warn">가장 긴 주가 ' + maxHours(fake) +
+        '시간이라 하루 ' + PERIOD_COUNT + '교시를 넘어갑니다. 주차를 늘려 주세요.</span>' : '');
+  }
+
+  ['fWeekStart', 'fWeekEnd', 'fHours'].forEach(function(id){
+    document.getElementById(id).addEventListener('input', renderHoursPlan);
+  });
 
   document.getElementById('formResetBtn').addEventListener('click', function(){
     clearForm();
@@ -1426,6 +1528,7 @@
     document.getElementById('fHours').value = s.hours;
     document.getElementById('fCredits').value = s.credits;
     document.getElementById('fContent').value = s.content || '';
+    renderHoursPlan();
     setFormMode(true);
     renderSubjectList();
     document.getElementById('formCard').scrollIntoView({ block: 'center' });
@@ -1672,7 +1775,7 @@
         '<td>' + escapeHtml(s.classType) + ' ' + escapeHtml(s.classLabel) + '</td>' +
         '<td>' + escapeHtml(s.professor) + '</td>' +
         '<td>' + escapeHtml(weekLabel(s)) + '</td>' +
-        '<td>' + s.hours + '</td>' +
+        '<td title="총 ' + requiredHours(s) + '시간">' + escapeHtml(planText(s)) + '</td>' +
         '<td>' + s.credits + '</td>' +
         '<td>' + (p
             ? '<span class="badge badge-placed">' + escapeHtml(p.day) + ' ' + periodLabel(p.start) +
@@ -1856,7 +1959,10 @@
     var scroll = boardEl.querySelector('.board-scroll');
     var table = boardEl.querySelector('.tt-table');
     var rows = table.querySelectorAll('tbody tr');
-    var lastPeriod = period + s.hours - 1;
+    // 이 구간에서의 시수만큼 미리보기를 그린다
+    var boards = boardsFor(currentGrade);
+    var board = boards[boardIdx];
+    var lastPeriod = period + (board ? hoursAtWeek(s, Math.max(board.from, s.weekStart)) : maxHours(s)) - 1;
     if(lastPeriod >= rows.length) lastPeriod = rows.length - 1;
 
     var box = scroll.querySelector('.tt-preview');
@@ -1897,8 +2003,8 @@
     chip.innerHTML =
       '<span class="chip-name">' + escapeHtml(subject.name) + '</span>' +
       '<span class="chip-meta">' + escapeHtml(subject.classType + '반 ' + subject.classLabel) +
-        ' · ' + escapeHtml(subject.professor) + ' · ' + subject.hours + '시수 · ' +
-        escapeHtml(weekLabel(subject)) + '</span>';
+        ' · ' + escapeHtml(subject.professor) + ' · ' + escapeHtml(weekLabel(subject)) + '</span>' +
+      '<span class="chip-meta">' + escapeHtml(planText(subject)) + '</span>';
     chip.addEventListener('dragstart', function(e){
       dragSubjectId = subject.id;
       e.dataTransfer.setData('text/plain', subject.id);
@@ -1950,9 +2056,11 @@
         var s = subjectById(p.subjectId);
         if(!s) return;
         var sp = spanOf(s);
-        for(var r = 0; r < s.hours; r++){
+        var hrs = hoursAtWeek(s, startW);     // 이 구간에서의 시수
+        for(var r = 0; r < hrs; r++){
           for(var c = sp[0]; c <= sp[1]; c++){
             cell[p.day + '|' + (p.start + r) + '|' + c] = {
+              hours: hrs,
               origin: (r === 0 && c === sp[0]),
               subject: s, placement: p, span: sp
             };
@@ -2061,7 +2169,7 @@
 
               if(info){
                 var s = info.subject, sp = info.span;
-                td.rowSpan = s.hours;
+                td.rowSpan = info.hours;
                 td.colSpan = sp[1] - sp[0] + 1;
                 td.className += ' occupied';
                 var color = subjectColor(s);
@@ -2075,9 +2183,9 @@
                   '<span class="p-meta">' + escapeHtml(s.classType + '반 ' + s.classLabel) + '</span>' +
                   '<span class="p-meta">' + escapeHtml(s.professor) + '</span>' +
                   '<span class="p-meta">' + escapeHtml(info.placement.room || '-') + '</span>' +
-                  (weekCount(s) < state.totalWeeks
-                    ? '<span class="p-weeks">' + s.weekStart + '~' + s.weekEnd + '주</span>'
-                    : '');
+                  '<span class="p-weeks">' + info.hours + '시간' +
+                    (weekCount(s) < state.totalWeeks ? ' · ' + s.weekStart + '~' + s.weekEnd + '주' : '') +
+                  '</span>';
                 (function(sid){
                   box.addEventListener('dragstart', function(e){
                     dragSubjectId = sid;
@@ -2161,12 +2269,13 @@
   }
 
   function openRoomPicker(subject, day, start){
-    var last = start + subject.hours - 1;
+    var h = maxHours(subject);
+    var last = start + h - 1;
     document.getElementById('roomPickDesc').textContent =
       subject.name + ' (' + subject.classType + '반 ' + subject.classLabel + ') · ' +
       day + '요일 ' + periodLabel(start) +
-      (subject.hours > 1 ? '~' + periodLabel(last) : '') +
-      ' · ' + weekLabel(subject) +
+      (h > 1 ? '~' + periodLabel(last) : '') +
+      ' · ' + weekLabel(subject) + ' (' + planText(subject) + ')' +
       ' — 사용할 강의실을 고르세요.';
 
     var list = document.getElementById('roomPickList');
@@ -2255,15 +2364,18 @@
   }
 
   function subjectSheetRows(){
-    var rows = [['학기', '학년', '과목명', '반형태', '반', '교수명', '시작주차', '종료주차', '주수', '시수', '학점', '배치', '요일', '교시', '강의실', '교육내용']];
+    var rows = [['학기', '학년', '과목명', '반형태', '반', '교수명', '시작주차', '종료주차', '주수',
+                 '기준시수', '총시간', '주차별 시수', '학점', '배치', '요일', '교시', '강의실', '교육내용']];
     state.subjects.forEach(function(s){
       var p = findPlacement(s.id);
+      var mh = maxHours(s);
       rows.push([
         s.semester + '학기', s.grade + '학년', s.name, s.classType + '반', s.classLabel,
-        s.professor, s.weekStart, s.weekEnd, weekCount(s), s.hours, s.credits,
+        s.professor, s.weekStart, s.weekEnd, weekCount(s),
+        s.hours, requiredHours(s), planText(s), s.credits,
         p ? '배치됨' : '미배치',
         p ? p.day : '',
-        p ? periodLabel(p.start) + (s.hours > 1 ? '~' + periodLabel(p.start + s.hours - 1) : '') : '',
+        p ? periodLabel(p.start) + (mh > 1 ? '~' + periodLabel(p.start + mh - 1) : '') : '',
         p ? (p.room || '') : '',
         s.content
       ]);
@@ -2304,10 +2416,11 @@
       var s = subjectById(p.subjectId);
       if(!s) return;
       var sp = spanOf(s);
-      for(var r = 0; r < s.hours; r++){
+      var hrs = hoursAtWeek(s, Math.max(board.from, s.weekStart));   // 이 구간에서의 시수
+      for(var r = 0; r < hrs; r++){
         for(var c = sp[0]; c <= sp[1]; c++){
           var key = p.day + '|' + (p.start + r) + '|' + c;
-          if(r === 0 && c === sp[0]) origin[key] = { subject: s, placement: p, span: sp };
+          if(r === 0 && c === sp[0]) origin[key] = { subject: s, placement: p, span: sp, hours: hrs };
           else covered[key] = true;
         }
       }
@@ -2322,11 +2435,11 @@
           if(o){
             var s = o.subject;
             row.push(s.name + '\n' + s.classType + '반 ' + s.classLabel + '\n' + s.professor +
-              '\n' + (o.placement.room || '-') +
+              '\n' + (o.placement.room || '-') + '\n' + o.hours + '시간' +
               (weekCount(s) < state.totalWeeks ? '\n' + s.weekStart + '~' + s.weekEnd + '주' : ''));
             merges.push({
               s: { r: 3 + i, c: colOf(di, o.span[0]) },
-              e: { r: 3 + i + s.hours - 1, c: colOf(di, o.span[1]) }
+              e: { r: 3 + i + o.hours - 1, c: colOf(di, o.span[1]) }
             });
           } else {
             row.push('');
@@ -2404,6 +2517,7 @@
    * 먼저 이 브라우저에 저장된 내용으로 화면을 그린 뒤, 서버 내용이 도착하면
    * 그걸로 덮어쓴다. 서버가 없으면(API_URL 비어 있음) 예전처럼 동작한다. */
   updateSyncUi();
+  renderHoursPlan();
   if(API_URL){
     syncFromServer();
     setInterval(pollServer, POLL_INTERVAL_MS);
