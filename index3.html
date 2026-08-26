@@ -253,6 +253,7 @@
     box-shadow:0 12px 30px rgba(0,0,0,.4);
     opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;
     z-index:80;max-width:min(90vw,420px);text-align:center;
+    white-space:pre-line;border-radius:14px;
   }
   .toast.show{opacity:1;transform:translate(-50%,0)}
 
@@ -780,7 +781,7 @@
    *
    * 커밋 메시지 끝에도 같은 값을 (v1.1) 형식으로 붙인다.
    * ============================================================ */
-  var APP_VERSION = '1.5';
+  var APP_VERSION = '1.6';
 
   var ROLES = ['기획', '아트', '개발'];
   var INDIVIDUAL_GRADES = ['2', '3'];
@@ -1167,6 +1168,31 @@
     return /^[A-Za-z]$/.test(s) ? s.toLowerCase() : s;
   }
 
+  /* 머리글 찾기 — 띄어쓰기나 표기가 조금 달라도 찾아낸다.
+   * ("수업반", "수업 반", "분반" 등) */
+  function findCol(header, names){
+    var tidy = header.map(function(h){ return String(h == null ? '' : h).replace(/\s+/g, ''); });
+    for(var j = 0; j < names.length; j++){
+      var exact = tidy.indexOf(names[j]);
+      if(exact !== -1) return exact;
+    }
+    for(var i = 0; i < tidy.length; i++){
+      for(var k = 0; k < names.length; k++){
+        if(tidy[i] && tidy[i].indexOf(names[k]) !== -1) return i;
+      }
+    }
+    return -1;
+  }
+
+  /* 수업반이 실제로 읽혔는지 업로드 직후에 알려 준다.
+   * 엑셀에 수업반 열이 없거나 머리글이 다르면 여기서 바로 드러난다. */
+  function classSectionNote(roster){
+    var withSec = roster.filter(function(s){ return s.classSection; }).length;
+    if(withSec === roster.length) return String.fromCharCode(10) + '수업반도 함께 읽었습니다';
+    if(withSec === 0) return String.fromCharCode(10) + '⚠ 수업반 열을 찾지 못했습니다 (머리글이 "수업반"인지 확인해 주세요)';
+    return String.fromCharCode(10) + '수업반은 ' + withSec + '명만 읽혔습니다 (나머지는 값이 비어 있음)';
+  }
+
   function parseWorkbook(workbook){
     var students = [];
     workbook.SheetNames.forEach(function(sheetName){
@@ -1188,8 +1214,8 @@
       var idxNo = header.indexOf('No');
       var idxHakbun = header.indexOf('학번');
       var idxName = header.indexOf('이름');
-      var idxHakjuk = header.indexOf('학적반');
-      var idxSuup = header.indexOf('수업반');
+      var idxHakjuk = findCol(header, ['학적반']);
+      var idxSuup = findCol(header, ['수업반', '수업분반', '분반']);
 
       var m = sheetName.match(/^\s*(\d+)\s*-\s*([A-Za-z가-힣0-9])/);
       var gradeFromSheet = m ? m[1] : '';
@@ -1320,7 +1346,7 @@
         state.evalEnabled = false;
       }
       afterRosterChange();
-      showToast(roster.length + '명의 학생 명단을 불러왔습니다');
+      showToast(roster.length + '명의 학생 명단을 불러왔습니다' + classSectionNote(roster));
     });
   }
 
@@ -1349,7 +1375,8 @@
         state.roster = newRoster;
       }
       afterRosterChange();
-      showToast('명단이 갱신되었습니다 (신규 ' + addedCount + '명, 제거 ' + removedCount + '명, 기존 배정 유지)');
+      showToast('명단이 갱신되었습니다 (신규 ' + addedCount + '명, 제거 ' + removedCount +
+        '명, 기존 배정 유지)' + classSectionNote(newRoster));
     });
   }
 
