@@ -204,6 +204,12 @@
     border-color:rgba(255,92,157,.45);background:rgba(255,92,157,.08);
   }
   .student-chip.is-other-grade .sid{color:#ff9ec4}
+  .team-leader-input{width:120px}
+  .chip-section{
+    display:inline-block;margin:0 2px;padding:1px 6px;border-radius:100px;
+    background:rgba(34,211,238,.18);border:1px solid rgba(34,211,238,.4);
+    color:#9fe9f7;font-size:10.5px;font-weight:700;vertical-align:middle;
+  }
   .team-name-input{
     font-family:inherit;font-size:13.5px;font-weight:650;color:var(--text);
     background:rgba(255,255,255,.06);border:1px solid var(--stroke);
@@ -453,7 +459,7 @@
         <div class="roster-table-wrap" id="rosterTableWrap">
           <div class="roster-scroll">
             <table class="roster-table">
-              <thead><tr><th>학년</th><th>반</th><th>학번</th><th>이름</th></tr></thead>
+              <thead><tr><th>학년</th><th>학적반</th><th>수업반</th><th>학번</th><th>이름</th></tr></thead>
               <tbody id="rosterTbody"></tbody>
             </table>
           </div>
@@ -774,7 +780,7 @@
    *
    * 커밋 메시지 끝에도 같은 값을 (v1.1) 형식으로 붙인다.
    * ============================================================ */
-  var APP_VERSION = '1.4';
+  var APP_VERSION = '1.5';
 
   var ROLES = ['기획', '아트', '개발'];
   var INDIVIDUAL_GRADES = ['2', '3'];
@@ -1154,6 +1160,13 @@
    * 실제 학생 행만 추려낸다 (하단 집계표·학적 변동 내역은 자동 제외).
    * 시트 이름이 "1-A" 식이면 거기서 학년/반을 가져온다.
    * ============================================================ */
+  /* 수업반 값 정리 — 팀 쪽 반이 a·b·c 소문자라 같은 표기로 맞춘다.
+   * 그 밖의 값(가·나, 1·2 등)은 적힌 그대로 둔다. */
+  function normalizeClassSection(v){
+    var s = v == null ? '' : String(v).trim();
+    return /^[A-Za-z]$/.test(s) ? s.toLowerCase() : s;
+  }
+
   function parseWorkbook(workbook){
     var students = [];
     workbook.SheetNames.forEach(function(sheetName){
@@ -1176,6 +1189,7 @@
       var idxHakbun = header.indexOf('학번');
       var idxName = header.indexOf('이름');
       var idxHakjuk = header.indexOf('학적반');
+      var idxSuup = header.indexOf('수업반');
 
       var m = sheetName.match(/^\s*(\d+)\s*-\s*([A-Za-z가-힣0-9])/);
       var gradeFromSheet = m ? m[1] : '';
@@ -1192,6 +1206,8 @@
           students.push({
             grade: gradeFromSheet || '?',
             section: classFromSheet || (idxHakjuk >= 0 ? String(row[idxHakjuk] || '').trim() : ''),
+            // 수업반 — 팀이 반별로 편성되므로 어느 반 학생인지 알아야 한다
+            classSection: idxSuup >= 0 ? normalizeClassSection(row[idxSuup]) : '',
             studentId: hakbunStr,
             name: nameStr
           });
@@ -1565,6 +1581,7 @@
     list.forEach(function(s){
       var tr = document.createElement('tr');
       tr.innerHTML = '<td>' + escapeHtml(s.grade) + '학년</td><td>' + escapeHtml(s.section) + '</td>' +
+        '<td>' + escapeHtml(s.classSection || '-') + '</td>' +
         '<td>' + escapeHtml(s.studentId) + '</td><td>' + escapeHtml(s.name) + '</td>';
       tbody.appendChild(tr);
     });
@@ -1741,6 +1758,34 @@
       showToast(title
         ? slotLabel(teamId, grade) + ' 팀명을 "' + title + '"으로 저장했습니다'
         : slotLabel(teamId, grade) + ' 팀명을 지웠습니다');
+    });
+  }
+
+  function teamLeader(team){
+    return team && team.leader ? team.leader : '';
+  }
+
+  function setTeamLeaderLocal(grade, teamId, leader){
+    var gd = state.teamsByGrade[grade];
+    if(!gd) return;
+    var team = (gd.teams || []).filter(function(t){ return t.id === teamId; })[0];
+    if(team) team.leader = leader;
+  }
+
+  function setTeamLeader(grade, teamId, leader){
+    callServer('setTeamLeader', { grade: grade, teamId: teamId, leader: leader }, null, function(res){
+      if(res && !res.ok){
+        showToast('팀장 저장에 실패했습니다: ' + (res.error || '알 수 없는 오류'));
+        renderTeamBoard();   // 서버 값으로 되돌린다
+        return;
+      }
+      if(res && res.state) state = normalizeState(res.state);
+      else setTeamLeaderLocal(grade, teamId, leader);
+      saveState();
+      markStateSynced();
+      showToast(leader
+        ? slotLabel(teamId, grade) + ' 팀장을 "' + leader + '"으로 저장했습니다'
+        : slotLabel(teamId, grade) + ' 팀장을 지웠습니다');
     });
   }
 
@@ -1983,16 +2028,18 @@
   function buildTeamExportRows(grade){
     var gd = state.teamsByGrade[grade];
     var uses = gradeUsesSections(grade);
-    var rows = [['구분', '반', '팀명', '역할', '학번', '이름', '명단학년', '학적반']];
+    var rows = [['구분', '반', '팀명', '팀장', '역할', '학번', '이름', '명단학년', '학적반', '수업반']];
 
     (gd && gd.teams || []).forEach(function(team){
       var title = teamTitle(team);
+      var leader = teamLeader(team);
       var sec = uses ? teamSection(team) + '반' : '';
       ROLES.forEach(function(role){
         (team.roles[role] || []).forEach(function(sid){
           var s = studentById(sid);
           if(!s) return;
-          rows.push([slotLabel(team.id, grade), sec, title, role, s.studentId, s.name, s.grade + '학년', s.section]);
+          rows.push([slotLabel(team.id, grade), sec, title, leader, role,
+            s.studentId, s.name, s.grade + '학년', s.section, s.classSection || '']);
         });
       });
     });
@@ -2000,13 +2047,13 @@
     (gd && gd.individual || []).forEach(function(sid){
       var s = studentById(sid);
       if(!s) return;
-      rows.push(['개인프로젝트', '', '', '', s.studentId, s.name, s.grade + '학년', s.section]);
+      rows.push(['개인프로젝트', '', '', '', '', s.studentId, s.name, s.grade + '학년', s.section, s.classSection || '']);
     });
 
     state.roster.forEach(function(s){
       if(s.grade !== grade) return;
       if(state.assignedMap[s.studentId]) return;
-      rows.push(['미배정', '', '', '', s.studentId, s.name, s.grade + '학년', s.section]);
+      rows.push(['미배정', '', '', '', '', s.studentId, s.name, s.grade + '학년', s.section, s.classSection || '']);
     });
 
     return rows;
@@ -2022,7 +2069,8 @@
     requirePassword(grade + '학년 배정 내보내기', '엑셀 파일로 내려받으려면 비밀번호를 입력하세요.', function(){
       try {
         var ws = XLSX.utils.aoa_to_sheet(rows);
-        ws['!cols'] = [{ wch: 12 }, { wch: 18 }, { wch: 8 }, { wch: 13 }, { wch: 10 }, { wch: 9 }];
+        ws['!cols'] = [{ wch: 12 }, { wch: 7 }, { wch: 18 }, { wch: 10 }, { wch: 8 },
+                       { wch: 13 }, { wch: 10 }, { wch: 10 }, { wch: 9 }, { wch: 9 }];
         var wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, grade + '학년');
         XLSX.writeFile(wb, grade + '학년_팀배정_' + todayStamp() + '.xlsx');
@@ -2073,7 +2121,11 @@
     var gradeTag = student.grade !== currentTeamGrade
       ? ' <span class="sid">' + escapeHtml(student.grade) + '학년</span>'
       : '';
-    label.innerHTML = escapeHtml(student.name) + gradeTag +
+    // 어느 수업반 학생인지 — 반별로 팀을 짜므로 배정할 때 바로 보여야 한다
+    var secTag = student.classSection
+      ? ' <span class="chip-section">' + escapeHtml(student.classSection) + '반</span>'
+      : '';
+    label.innerHTML = escapeHtml(student.name) + secTag + gradeTag +
       ' <span class="sid">' + escapeHtml(student.studentId) + '</span>';
     chip.appendChild(label);
     if(removable){
@@ -2231,6 +2283,34 @@
         });
       })(team.id);
       head.appendChild(titleInput);
+
+      // 팀장도 팀명처럼 직접 적는다
+      var leaderInput = document.createElement('input');
+      leaderInput.type = 'text';
+      leaderInput.className = 'team-name-input team-leader-input';
+      leaderInput.value = teamLeader(team);
+      leaderInput.maxLength = 20;
+      leaderInput.placeholder = '팀장 입력';
+      leaderInput.title = '팀장 이름을 적습니다 (비우면 삭제)';
+      leaderInput.dataset.original = teamLeader(team);
+      (function(teamId){
+        function commitLeader(){
+          var next = leaderInput.value.trim();
+          if(next === leaderInput.dataset.original) return;   // 변경 없음
+          leaderInput.value = next;
+          leaderInput.dataset.original = next;
+          setTeamLeader(grade, teamId, next);
+        }
+        leaderInput.addEventListener('blur', commitLeader);
+        leaderInput.addEventListener('keydown', function(e){
+          if(e.key === 'Enter'){ leaderInput.blur(); }
+          else if(e.key === 'Escape'){
+            leaderInput.value = leaderInput.dataset.original;
+            leaderInput.blur();
+          }
+        });
+      })(team.id);
+      head.appendChild(leaderInput);
 
       var countEl = document.createElement('span');
       countEl.className = 'team-head-count';

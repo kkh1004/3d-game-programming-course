@@ -445,6 +445,17 @@ function applyAction(store, action, payload, password) {
       return { ok: true, message: 'team title set' };
     }
 
+    /* 팀장 이름 — 팀명과 같은 성격이라 비밀번호 없이 적을 수 있다. */
+    case 'setTeamLeader': {
+      var lg = String(payload.grade);
+      var lgd = state.teamsByGrade[lg];
+      if (!lgd) return { ok: false, error: 'grade not found' };
+      var lteam = (lgd.teams || []).filter(function (t) { return t.id === payload.teamId; })[0];
+      if (!lteam) return { ok: false, error: 'team not found' };
+      lteam.leader = String(payload.leader == null ? '' : payload.leader).trim().slice(0, 20);
+      return { ok: true, message: 'team leader set' };
+    }
+
     /* 팀의 반을 개별로 바꾸는 setTeamSection 은 없앴다.
      * 반은 팀 번호 구간(a=1~10, b=11~20, c=21~30)으로 정해진다. 이 규칙이
      * 있어야 반별 팀 개수를 세고 새 팀을 어느 번호로 만들지 알 수 있다.
